@@ -5,9 +5,12 @@
  * 가볍고 빠른 lite 모델을 앞에 두면 평소엔 빨리 끝나고, 막히면 더 안정적인 모델로 자동 전환된다.
  */
 const DEFAULT_GEMINI_MODELS = [
-  'gemini-2.0-flash-lite',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash'
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3.6-flash',
+  'gemini-3.7-flash',
+  'gemini-3.8-flash'
 ];
 
 function resolveGeminiModels_() {
