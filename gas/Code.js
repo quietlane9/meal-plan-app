@@ -30,6 +30,8 @@ function doPost(e) {
         return jsonOutput_(actionInventorySet_(body));
       case 'plan.generate':
         return jsonOutput_(actionPlanGenerate_(body));
+      case 'plan.lightOptions':
+        return jsonOutput_(actionPlanLightOptions_(body));
       case 'plan.list':
         return jsonOutput_(actionPlanList_(body));
       default:

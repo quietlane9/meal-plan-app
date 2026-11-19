@@ -334,6 +334,28 @@ main {
   white-space: nowrap;
 }
 
+.light-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.light-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.light-option .light-menu {
+  font-size: 14px;
+}
+
 .tabbar {
   position: fixed;
   bottom: 0;
