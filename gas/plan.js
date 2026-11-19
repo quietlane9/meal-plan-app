@@ -16,32 +16,43 @@ const TOP_ITEMS_LIMIT = 30;
 const PLAN_MAX_OUTPUT_TOKENS = 1536;
 const LIGHT_MAX_OUTPUT_TOKENS = 512;
 
-const PLAN_SCHEMA = {
-  type: 'object',
-  properties: {
-    meals: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          day: { type: 'string', enum: DAYS },
-          slot: { type: 'string', enum: SLOTS },
-          menu: { type: 'string' },
-          uses: { type: 'array', items: { type: 'integer' } },
-          difficulty: { type: 'string', enum: DIFFICULTIES }
-        },
-        required: ['day', 'slot', 'menu', 'difficulty']
+/**
+ * meals 배열 길이를 요청한 칸 수와 정확히 같게(minItems=maxItems) 강제한다.
+ * 이걸 안 하면 Gemini가 required만 맞춘 빈 배열(또는 일부만)을 돌려줘도 스키마상 유효해서,
+ * "완료"라고 나오는데 테이블은 비어 있는 상태가 생길 수 있다.
+ */
+function buildPlanSchema_(cellCount) {
+  return {
+    type: 'object',
+    properties: {
+      meals: {
+        type: 'array',
+        minItems: cellCount,
+        maxItems: cellCount,
+        items: {
+          type: 'object',
+          properties: {
+            day: { type: 'string', enum: DAYS },
+            slot: { type: 'string', enum: SLOTS },
+            menu: { type: 'string' },
+            uses: { type: 'array', items: { type: 'integer' } },
+            difficulty: { type: 'string', enum: DIFFICULTIES }
+          },
+          required: ['day', 'slot', 'menu', 'difficulty']
+        }
       }
-    }
-  },
-  required: ['meals']
-};
+    },
+    required: ['meals']
+  };
+}
 
 const LIGHT_SCHEMA = {
   type: 'object',
   properties: {
     options: {
       type: 'array',
+      minItems: 3,
+      maxItems: 3,
       items: {
         type: 'object',
         properties: {
@@ -81,11 +92,14 @@ function actionPlanGenerate_(body) {
     otherMeals: otherMeals
   });
 
-  const result = callGeminiJson_([{ text: prompt }], PLAN_SCHEMA, 0.7, {
+  const result = callGeminiJson_([{ text: prompt }], buildPlanSchema_(onlyCells.length), 0.7, {
     thinkingConfig: { thinkingBudget: 0 },
     maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS
   });
   const meals = result.meals || [];
+  if (meals.length !== onlyCells.length) {
+    console.log('plan.generate 경고 — 요청 ' + onlyCells.length + '칸, 응답 ' + meals.length + '칸');
+  }
 
   if (replaceWeek) {
     deleteRowsByMatch('MealPlans', { week_start: weekStart });

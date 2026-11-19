@@ -195,19 +195,38 @@ async function generatePlan(weekStart) {
   }
 }
 
+function missingCells(meals) {
+  return cellsForDays(DAYS).filter(c => !meals.some(m => m.day === c.day && m.slot === c.slot && m.menu));
+}
+
+/** 실제로 몇 칸이 채워졌는지 확인하고 요약한다. checkRules가 빈 planMeals도 "위반 없음"으로 보길래, 채움 여부를 직접 센다. */
+function describePlanStatus(meals) {
+  const filled = 21 - missingCells(meals).length;
+  if (filled < 21) {
+    return `${filled}/21끼만 채워졌습니다. 다시 시도하거나 빈 칸을 눌러 다시 짜 보세요.`;
+  }
+  const violations = checkRules(meals, []);
+  return violations.length
+    ? `완료 (규칙 위반 ${violations.length}건 남음)`
+    : '완료: 21끼 생성, 규칙 위반 없음';
+}
+
 async function fixRuleViolations(weekStart) {
   const statusEl = document.getElementById('plan-status');
   const violations = checkRules(planMeals, []);
+  const missing = missingCells(planMeals);
+  const retryCells = Array.from(
+    new Map(violations.concat(missing).map(v => [v.day + v.slot, { day: v.day, slot: v.slot }])).values()
+  );
 
-  if (violations.length === 0) {
-    statusEl.textContent = '완료: 21끼 생성, 규칙 위반 없음';
+  if (retryCells.length === 0) {
+    statusEl.textContent = describePlanStatus(planMeals);
     return;
   }
 
-  statusEl.textContent = `규칙 위반 ${violations.length}건 발견, 해당 칸만 다시 짜는 중...`;
-  const retryCells = Array.from(
-    new Map(violations.map(v => [v.day + v.slot, { day: v.day, slot: v.slot }])).values()
-  );
+  statusEl.textContent = missing.length
+    ? `빈 칸 ${missing.length}개(규칙 위반 ${violations.length}건 포함) 다시 짜는 중...`
+    : `규칙 위반 ${violations.length}건 발견, 해당 칸만 다시 짜는 중...`;
 
   const retryResult = await callApi('plan.generate', {
     week_start: weekStart,
@@ -220,10 +239,7 @@ async function fixRuleViolations(weekStart) {
   renderPlanDetail();
   renderShoppingList();
 
-  const remaining = checkRules(planMeals, []);
-  statusEl.textContent = remaining.length
-    ? `완료 (규칙 위반 ${remaining.length}건 남음)`
-    : '완료: 21끼 생성, 규칙 위반 없음';
+  statusEl.textContent = describePlanStatus(planMeals);
 }
 
 async function regenerateCell(weekStart, cell) {
