@@ -131,7 +131,7 @@ async function generatePlan(weekStart, onlyCells) {
     const result = await callApi('plan.generate', {
       week_start: weekStart,
       only_cells: onlyCells || undefined
-    });
+    }, 170000);
     planMeals = result.meals || [];
     planShopping = result.shopping || [];
     renderPlanGrid(weekStart);
@@ -148,7 +148,7 @@ async function generatePlan(weekStart, onlyCells) {
     const retryCells = Array.from(
       new Map(violations.map(v => [v.day + v.slot, { day: v.day, slot: v.slot }])).values()
     );
-    const retryResult = await callApi('plan.generate', { week_start: weekStart, only_cells: retryCells });
+    const retryResult = await callApi('plan.generate', { week_start: weekStart, only_cells: retryCells }, 170000);
     planMeals = retryResult.meals || [];
     planShopping = retryResult.shopping || [];
     renderPlanGrid(weekStart);
