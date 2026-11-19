@@ -62,8 +62,10 @@ function callGeminiJson_(parts, schema, temperature, options) {
 /** 모델 하나에 대해, 400이면 thinkingConfig를 점점 단순한 형태로 바꿔가며 다시 시도한다. */
 function callGeminiModel_(model, apiKey, parts, schema, temperature, options, deadline) {
   const maxOutputTokens = options && options.maxOutputTokens;
+  // test_plan_minimal()로 실측: thinkingLevel 'minimal'은 'low'·thinkingConfig 없음(둘 다 ~8~9초)보다
+  // 훨씬 느릴 수 있어(58초 측정됨) 폴백 체인에서 뺐다.
   const thinkingChain = options && options.thinkingConfig
-    ? [options.thinkingConfig, { thinkingLevel: 'low' }, { thinkingLevel: 'minimal' }, null]
+    ? [options.thinkingConfig, { thinkingLevel: 'low' }, null]
     : [null];
 
   let lastErr;

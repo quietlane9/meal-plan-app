@@ -29,7 +29,10 @@ function test_sheets() {
 
 /**
  * gemini-3.5-flash-lite에 thinkingConfig 변형별로 같은 최소 요청을 보내 400 원인을 좁힌다.
- * 편집기에서 실행 후 "실행" 로그에서 어느 변형이 성공/실패(HTTP 코드)했는지 확인한다.
+ * 편집기에서 실행 후 "실행" 로그에서 어느 변형이 성공/실패(HTTP 코드)했는지, 소요시간은 어떤지 확인한다.
+ * 실측 결과(2026-11-19): thinkingBudget:0은 400으로 즉시 거부, thinkingConfig 없음과
+ * thinkingLevel:'low'는 둘 다 ~8~9초, thinkingLevel:'minimal'은 58초나 걸려서
+ * gas/gemini.js의 실제 폴백 체인에서는 뺐다(여기 테스트에는 비교용으로 남겨 둠).
  */
 function test_plan_minimal() {
   const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
