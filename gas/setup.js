@@ -30,6 +30,78 @@ function test_extract() {
   Logger.log(JSON.stringify(result));
 }
 
+/**
+ * samples/seed-items-2026-11-19.csv를 변환한 gas/seed_data.js(SEED_DATA, 56개 품목)를
+ * 시트에 한 번 넣는다. save 액션(actionSave_)과 같은 로직을 쓰되,
+ * upload_type은 '자주구매'로 고정하고 upload_id는 'seed-20261119'로 고정해 두 번 실행해도
+ * Purchases에 중복이 쌓이지 않게 한다(Items는 upsertRow라 원래도 중복 없음).
+ * note 열은 SEED_DATA에 없으므로 저장되지 않는다.
+ */
+function seed_import() {
+  if (typeof SEED_DATA === 'undefined') {
+    Logger.log('gas/seed_data.js가 없습니다. README의 초기 데이터 안내를 따라 추가하세요.');
+    return;
+  }
+
+  const uploadType = '자주구매';
+  const uploadId = 'seed-20261119';
+  const now = new Date();
+
+  const alreadySeeded = new Set(
+    readRows('Purchases')
+      .filter(p => p.upload_id === uploadId)
+      .map(p => p.item_key)
+  );
+
+  let itemsSaved = 0;
+  let itemsUpdated = 0;
+  let purchasesAdded = 0;
+  let purchasesSkipped = 0;
+
+  SEED_DATA.forEach(item => {
+    const itemKey = makeItemKey(item.brand, item.name, item.size);
+    if (!itemKey) return;
+
+    const incoming = {
+      item_key: itemKey,
+      brand: item.brand || '',
+      name: item.name || '',
+      size: item.size || '',
+      category: item.category || '',
+      storage: item.storage || '',
+      meal_role: item.meal_role || '',
+      servings: item.servings || '',
+      shelf_days: item.shelf_days || '',
+      purchase_count: item.purchase_count || 0,
+      last_price: item.price || '',
+      updated_at: now
+    };
+
+    const result = upsertRow('Items', incoming, mergeItem_);
+    if (result.updated) itemsUpdated++; else itemsSaved++;
+
+    if (alreadySeeded.has(itemKey)) {
+      purchasesSkipped++;
+      return;
+    }
+
+    appendRow('Purchases', {
+      uploaded_at: now,
+      upload_type: uploadType,
+      item_key: itemKey,
+      qty: 1,
+      price: item.price || '',
+      upload_id: uploadId
+    });
+    purchasesAdded++;
+  });
+
+  Logger.log(
+    'Items 신규 ' + itemsSaved + ', 갱신 ' + itemsUpdated +
+    ' / Purchases 추가 ' + purchasesAdded + ', 건너뜀(이미 있음) ' + purchasesSkipped
+  );
+}
+
 function test_save() {
   const result = actionSave_({
     upload_type: '자주구매',

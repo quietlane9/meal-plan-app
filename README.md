@@ -28,7 +28,8 @@ npm i -g @google/clasp
 clasp login
 ```
 - https://script.google.com/home/usersettings 에서 "Google Apps Script API"를 켠다.
-- 새 Apps Script 프로젝트를 만들거나(`clasp create --type webapp --rootDir gas`) 기존 프로젝트의 스크립트 ID를 사용한다.
+- 새 standalone 프로젝트를 만들거나(`cd gas && clasp create-script --type standalone --title "meal-plan-app" --rootDir .`) 기존 프로젝트의 스크립트 ID를 쓴다.
+- `clasp create-script`가 `appsscript.json`을 기본값으로 덮어쓰므로, 실행 후 `timeZone: Asia/Seoul`과 `webapp` 설정이 그대로인지 확인한다.
 - `gas/.clasp.json.example`을 참고해 `gas/.clasp.json`을 만들고 `scriptId`를 채운다. (`.clasp.json`은 `.gitignore`에 있어 커밋되지 않는다.)
 
 ### 3. 코드 업로드
@@ -68,6 +69,17 @@ const GAS_URL = '여기에 5번에서 복사한 웹앱 URL';
 ### 7. 동작 확인
 - `samples/ssg-frequent` 14장을 "자주구매"로 올려 추출 → 검수 → 저장까지 끝까지 해본다.
 - 기준: 약 55개 품목이 중복 없이 Items 시트에 쌓이고, 구매횟수(15, 11, 10…)가 맞는지 확인.
+
+### 8. 초기 데이터 시딩 (선택, 한 번만)
+과거 자주구매 56개 품목을 업로드 화면 없이 바로 시트에 넣고 싶을 때 쓴다.
+
+1. `samples/seed-items-2026-11-19.csv`를 `gas/seed_data.js`의 `SEED_DATA` 상수(JSON 배열)로 바꿔 둔다. 이 파일은 개인 구매 데이터라 `.gitignore`에 있고 `clasp push`로만 Apps Script에 올라간다.
+2. `cd gas && clasp push`
+3. Apps Script 편집기에서 `seed_import()` 함수를 실행한다.
+   - Items는 `item_key` 기준 upsert라 두 번 실행해도 중복되지 않는다.
+   - Purchases는 `upload_id='seed-20261119'`로 이미 들어간 `item_key`는 건너뛰어서, 두 번 실행해도 중복이 쌓이지 않는다.
+   - `note` 열은 시트에 저장하지 않는다.
+   - 실행 후 로그에 "Items 신규 N, 갱신 M / Purchases 추가 K, 건너뜀 L"이 찍힌다.
 
 ## GitHub Pages 배포
 `.github/workflows/pages.yml`이 `web/` 폴더만 GitHub Pages로 배포한다(`main` 브랜치의 `web/**` 변경 시 자동 실행).

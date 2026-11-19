@@ -4,3 +4,5 @@ gas/.clasp.json
 .env
 # 테스트용 스크린샷은 공개 저장소에 올리지 않음
 samples/
+# 초기 시딩용 개인 구매 데이터. clasp push로만 전달하고 GitHub엔 올리지 않음
+gas/seed_data.js
