@@ -54,7 +54,8 @@ function actionExtract_(body) {
     parts.push({ inlineData: { mimeType: img.mime, data: img.data } });
   });
 
-  const result = callGeminiJson_(parts, EXTRACT_SCHEMA, 0.1);
+  // 추출은 읽어서 그대로 옮기는 작업이라 생각(thinking)이 필요 없어 꺼서 응답을 빠르게 받는다.
+  const result = callGeminiJson_(parts, EXTRACT_SCHEMA, 0.1, { thinkingConfig: { thinkingBudget: 0 } });
   return { items: result.items || [] };
 }
 

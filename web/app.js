@@ -1,12 +1,15 @@
 /**
  * 탭 전환 + 업로드/검수/식단/설정 화면 동작. 재고 화면은 Stage 3에서 만든다.
  */
-const BATCH_SIZE = 4;
+const BATCH_SIZE = 2;
 const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const SLOTS = ['아침', '점심', '저녁'];
 
 let selectedFiles = [];
 let reviewItems = []; // { ...추출필드, keep, mergeSelected }
+
+let encodedBatches = []; // [[{mime,data}, ...], ...]
+let batchStates = []; // [{ status: 'pending'|'loading'|'success'|'error', result?, error? }]
 
 let planMeals = [];
 let planShopping = [];
@@ -298,7 +301,6 @@ function chunk(array, size) {
 async function startExtraction() {
   const progress = document.getElementById('progress');
   const extractBtn = document.getElementById('btn-extract');
-  const uploadType = document.getElementById('upload-type').value;
 
   extractBtn.disabled = true;
   progress.textContent = '이미지 줄이는 중...';
@@ -311,25 +313,78 @@ async function startExtraction() {
       }))
     );
 
-    const batches = chunk(encoded, BATCH_SIZE);
-    const batchResults = [];
+    encodedBatches = chunk(encoded, BATCH_SIZE);
+    batchStates = encodedBatches.map(() => ({ status: 'pending' }));
 
-    for (let i = 0; i < batches.length; i++) {
-      progress.textContent = `추출 중... (${i + 1}/${batches.length} 묶음)`;
-      const result = await callApi('extract', { upload_type: uploadType, images: batches[i] });
-      batchResults.push(result);
-    }
-
-    const merged = mergeExtractedItems(batchResults);
-    reviewItems = merged.map(item => Object.assign({ keep: true, mergeSelected: false }, item));
-
-    progress.textContent = `완료: ${reviewItems.length}개 품목 추출`;
-    renderReviewList();
+    await runBatches(encodedBatches.map((_, i) => i));
   } catch (err) {
     progress.textContent = '오류: ' + err.message;
   } finally {
     extractBtn.disabled = selectedFiles.length === 0;
   }
+}
+
+/** indices에 해당하는 묶음만 (다시) 호출한다. 실패한 묶음만 골라 재시도할 때도 이 함수를 쓴다. */
+async function runBatches(indices) {
+  const uploadType = document.getElementById('upload-type').value;
+
+  for (const idx of indices) {
+    batchStates[idx] = { status: 'loading' };
+    renderBatchStatus();
+
+    try {
+      const result = await callApi('extract', { upload_type: uploadType, images: encodedBatches[idx] });
+      batchStates[idx] = { status: 'success', result };
+    } catch (err) {
+      batchStates[idx] = { status: 'error', error: err.message };
+    }
+
+    renderBatchStatus();
+    updateReviewFromBatches();
+  }
+}
+
+function renderBatchStatus() {
+  const progress = document.getElementById('progress');
+  const total = batchStates.length;
+  const done = batchStates.filter(b => b.status === 'success').length;
+  const failed = batchStates
+    .map((b, idx) => Object.assign({ idx }, b))
+    .filter(b => b.status === 'error');
+
+  progress.textContent = failed.length
+    ? `진행: ${done}/${total}개 묶음 완료, 실패 ${failed.length}개`
+    : `진행: ${done}/${total}개 묶음 완료`;
+
+  renderFailedBatches(failed);
+}
+
+function renderFailedBatches(failed) {
+  const container = document.getElementById('failed-batches');
+
+  if (failed.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = failed.map(f => `
+    <div class="failed-batch">
+      <span>묶음 ${f.idx + 1} 실패: ${escapeAttr(f.error)}</span>
+      <button class="btn-secondary btn-retry-batch" data-idx="${f.idx}">다시 시도</button>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('.btn-retry-batch').forEach(btn => {
+    btn.addEventListener('click', () => runBatches([Number(btn.dataset.idx)]));
+  });
+}
+
+/** 지금까지 성공한 묶음들만 모아 검수 목록을 다시 계산한다. 아직 실패/대기 중인 묶음은 빠진다. */
+function updateReviewFromBatches() {
+  const successResults = batchStates.filter(b => b.status === 'success').map(b => b.result);
+  const merged = mergeExtractedItems(successResults);
+  reviewItems = merged.map(item => Object.assign({ keep: true, mergeSelected: false }, item));
+  renderReviewList();
 }
 
 function renderReviewList() {

@@ -1,65 +1,78 @@
 /**
  * Gemini 호출 공통 함수. responseSchema로 구조화 출력을 받는다.
- * GEMINI_MODEL은 모델 하나(문자열) 또는 여러 개(쉼표 목록 "a,b,c" 또는 JSON 배열 '["a","b"]')로 둘 수 있다.
- * 여러 개면 앞에서부터 순서대로 시도하고, 한 모델이 (재시도 후에도) 실패하면 다음 모델로 넘어간다.
- * 가볍고 빠른 lite 모델을 앞에 두면 평소엔 빨리 끝나고, 막히면 더 안정적인 모델로 자동 전환된다.
+ * - GEMINI_MODEL은 모델 하나(문자열) 또는 여러 개(쉼표 목록 "a,b" 또는 JSON 배열 '["a","b"]')로 둘 수 있지만,
+ *   폴백은 앞에서부터 최대 MAX_FALLBACK_MODELS개까지만 쓴다(더 적으면 있는 만큼만).
+ * - 모델 하나당 최초 시도 + 재시도 1회(총 2번)만 하고, 429/503이면 1초 쉬고 한 번만 다시 해본다.
+ * - 전체 호출(모델·재시도 통틀어)은 TOTAL_TIME_BUDGET_MS 안에 끝나야 하며, 넘으면 더 시도하지 않고 바로 실패를 던진다.
+ * - 모델명·시도 번호·소요시간(ms)·HTTP 코드를 매 시도마다 Logger로 남긴다.
+ * - options.thinkingConfig를 넘기면 그대로 generationConfig.thinkingConfig에 실어 보낸다.
+ *   추출처럼 읽기만 하는 호출은 { thinkingBudget: 0 }으로 생각(thinking)을 꺼서 응답을 빠르게 받는다.
  */
-const DEFAULT_GEMINI_MODELS = [
-  'gemini-3.5-flash-lite',
-  'gemini-3.1-flash-lite',
-  'gemini-3.5-flash',
-  'gemini-3.6-flash',
-  'gemini-3.7-flash',
-  'gemini-3.8-flash'
-];
+const MAX_FALLBACK_MODELS = 2;
+const MAX_ATTEMPTS_PER_MODEL = 2; // 최초 시도 + 재시도 1회
+const TOTAL_TIME_BUDGET_MS = 90000;
+
+const DEFAULT_GEMINI_MODELS = ['gemini-3.5-flash', 'gemini-3.7-flash'];
 
 function resolveGeminiModels_() {
   const raw = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL');
-  if (!raw) return DEFAULT_GEMINI_MODELS;
+  let models = DEFAULT_GEMINI_MODELS;
 
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length) return parsed;
-  } catch (err) {
-    // JSON 배열이 아니면 쉼표로 구분된 문자열로 본다.
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) models = parsed;
+    } catch (err) {
+      const list = raw.split(',').map(s => s.trim()).filter(Boolean);
+      if (list.length) models = list;
+    }
   }
 
-  const list = raw.split(',').map(s => s.trim()).filter(Boolean);
-  return list.length ? list : DEFAULT_GEMINI_MODELS;
+  return models.slice(0, MAX_FALLBACK_MODELS);
 }
 
-function callGeminiJson_(parts, schema, temperature) {
+function callGeminiJson_(parts, schema, temperature, options) {
   const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
   if (!apiKey) throw new Error('Script Properties에 GEMINI_API_KEY가 없습니다.');
 
   const models = resolveGeminiModels_();
+  const deadline = Date.now() + TOTAL_TIME_BUDGET_MS;
   const errors = [];
 
   for (let i = 0; i < models.length; i++) {
+    if (Date.now() >= deadline) {
+      errors.push(models[i] + ': 전체 시간 상한(' + (TOTAL_TIME_BUDGET_MS / 1000) + '초) 초과로 시도 안 함');
+      Logger.log('Gemini 중단 — 모델: ' + models[i] + ', 사유: 전체 시간 상한 초과');
+      break;
+    }
     try {
-      return callGeminiModel_(models[i], apiKey, parts, schema, temperature);
+      return callGeminiModel_(models[i], apiKey, parts, schema, temperature, options, deadline);
     } catch (err) {
       errors.push(models[i] + ': ' + err.message);
     }
   }
 
-  throw new Error('모든 Gemini 모델 호출이 실패했습니다.\n' + errors.join('\n'));
+  throw new Error('Gemini 호출 실패(전체 상한 ' + (TOTAL_TIME_BUDGET_MS / 1000) + '초):\n' + errors.join('\n'));
 }
 
-/** 429(한도 초과)/503(과부하) 응답은 지수 백오프로 최대 3회 재시도한다. */
-function callGeminiModel_(model, apiKey, parts, schema, temperature) {
+function callGeminiModel_(model, apiKey, parts, schema, temperature, options, deadline) {
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
+
+  const generationConfig = {
+    temperature: temperature,
+    responseMimeType: 'application/json',
+    responseSchema: schema
+  };
+  if (options && options.thinkingConfig) {
+    generationConfig.thinkingConfig = options.thinkingConfig;
+  }
 
   const payload = {
     contents: [{ role: 'user', parts: parts }],
-    generationConfig: {
-      temperature: temperature,
-      responseMimeType: 'application/json',
-      responseSchema: schema
-    }
+    generationConfig: generationConfig
   };
 
-  const options = {
+  const fetchOptions = {
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify(payload),
@@ -67,9 +80,20 @@ function callGeminiModel_(model, apiKey, parts, schema, temperature) {
   };
 
   let lastError = '';
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const res = UrlFetchApp.fetch(url, options);
+  for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_MODEL; attempt++) {
+    if (Date.now() >= deadline) {
+      throw new Error('전체 시간 상한 초과');
+    }
+
+    const start = Date.now();
+    const res = UrlFetchApp.fetch(url, fetchOptions);
     const code = res.getResponseCode();
+    const elapsed = Date.now() - start;
+    Logger.log(
+      'Gemini 호출 — 모델: ' + model +
+      ', 시도: ' + (attempt + 1) + '/' + MAX_ATTEMPTS_PER_MODEL +
+      ', 소요: ' + elapsed + 'ms, HTTP: ' + code
+    );
 
     if (code === 200) {
       const json = JSON.parse(res.getContentText());
@@ -79,7 +103,10 @@ function callGeminiModel_(model, apiKey, parts, schema, temperature) {
 
     if (code === 429 || code === 503) {
       lastError = res.getContentText();
-      Utilities.sleep(1000 * Math.pow(2, attempt)); // 1s, 2s, 4s
+      const hasRetryLeft = attempt < MAX_ATTEMPTS_PER_MODEL - 1;
+      if (hasRetryLeft && Date.now() + 1000 < deadline) {
+        Utilities.sleep(1000);
+      }
       continue;
     }
 
