@@ -58,6 +58,13 @@ Apps Script 편집기 → **배포 → 새 배포**
 
 배포 후 나오는 웹앱 URL을 복사해 둔다.
 
+**이후 코드를 고칠 때마다 주의**: `clasp push`는 스크립트 내용만 올릴 뿐, 이미 배포된 웹앱 URL은 그 시점의 버전에 고정돼 있어 자동으로 갱신되지 않는다. 같은 URL을 유지하면서 최신 코드를 반영하려면 `clasp push` 후 아래처럼 그 배포를 재배포한다.
+```bash
+clasp deployments               # 배포 ID 확인
+clasp deploy -i <배포ID> -d "설명"
+```
+(`-i` 없이 `clasp deploy`만 실행하면 새 URL의 배포가 또 생기므로, 반드시 기존 배포 ID를 지정한다.)
+
 ### 6. 프런트에 URL 연결
 `web/config.js`:
 ```js
