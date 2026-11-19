@@ -16,6 +16,12 @@ function setup() {
   }
 }
 
+/** GEMINI_MODEL Script Property를 gemini.js의 기본 폴백 목록으로 덮어쓴다(이전에 넣어둔 값을 지우고 싶을 때 실행). */
+function reset_gemini_model() {
+  PropertiesService.getScriptProperties().setProperty('GEMINI_MODEL', JSON.stringify(DEFAULT_GEMINI_MODELS));
+  Logger.log('GEMINI_MODEL을 ' + JSON.stringify(DEFAULT_GEMINI_MODELS) + '로 재설정했습니다.');
+}
+
 function test_sheets() {
   ensureAllSheets();
   Logger.log('6개 탭 생성/확인 완료');

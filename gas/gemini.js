@@ -12,7 +12,7 @@ const MAX_FALLBACK_MODELS = 2;
 const MAX_ATTEMPTS_PER_MODEL = 2; // 최초 시도 + 재시도 1회
 const TOTAL_TIME_BUDGET_MS = 90000;
 
-const DEFAULT_GEMINI_MODELS = ['gemini-3.5-flash', 'gemini-3.7-flash'];
+const DEFAULT_GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.7-flash'];
 
 function resolveGeminiModels_() {
   const raw = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL');
