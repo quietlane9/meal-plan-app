@@ -122,6 +122,16 @@ main {
   color: #333;
 }
 
+details summary {
+  cursor: pointer;
+  color: #888;
+  display: inline;
+}
+
+details[open] summary {
+  display: block;
+}
+
 .muted {
   font-size: 13px;
   color: #777;

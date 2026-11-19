@@ -15,6 +15,27 @@ let planMeals = [];
 let planShopping = [];
 let selectedCell = null; // { day, slot }
 
+/** 짧은 사용자 문구 + 자세히(접힌 원문)로 오류를 렌더링한다. */
+function friendlySummary(message) {
+  if (/503|high demand|과부하/i.test(message)) {
+    return '모델이 붐벼요. 잠시 후 다시 시도해 주세요.';
+  }
+  if (/429|quota|rate limit/i.test(message)) {
+    return '요청이 많아 잠시 제한됐어요. 잠시 후 다시 시도해 주세요.';
+  }
+  if (/인증 실패/.test(message)) {
+    return '토큰이 맞지 않아요. 설정 탭에서 확인해 주세요.';
+  }
+  if (/시간.*(초과|넘게)/.test(message)) {
+    return '응답이 너무 오래 걸려요. 잠시 후 다시 시도해 주세요.';
+  }
+  return '오류가 발생했어요.';
+}
+
+function errorHtml(err) {
+  return `${escapeAttr(friendlySummary(err.message))} <details><summary>자세히</summary>${escapeAttr(err.message)}</details>`;
+}
+
 function initTabs() {
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -170,7 +191,7 @@ async function generatePlan(weekStart) {
 
     await fixRuleViolations(weekStart);
   } catch (err) {
-    statusEl.textContent = '오류: ' + err.message;
+    statusEl.innerHTML = errorHtml(err);
   }
 }
 
@@ -222,7 +243,7 @@ async function regenerateCell(weekStart, cell) {
     renderShoppingList();
     statusEl.textContent = '완료';
   } catch (err) {
-    statusEl.textContent = '오류: ' + err.message;
+    statusEl.innerHTML = errorHtml(err);
   }
 }
 
@@ -243,7 +264,7 @@ async function loadLightOptions() {
       `).join('')
       : '<p class="muted">추천 결과가 없습니다.</p>';
   } catch (err) {
-    container.innerHTML = `<p class="muted">오류: ${escapeAttr(err.message)}</p>`;
+    container.innerHTML = `<p class="muted">${errorHtml(err)}</p>`;
   }
 }
 
@@ -398,7 +419,7 @@ async function startExtraction() {
 
     await runBatches(encodedBatches.map((_, i) => i));
   } catch (err) {
-    progress.textContent = '오류: ' + err.message;
+    progress.innerHTML = errorHtml(err);
   } finally {
     extractBtn.disabled = selectedFiles.length === 0;
   }
@@ -449,7 +470,7 @@ function renderFailedBatches(failed) {
 
   container.innerHTML = failed.map(f => `
     <div class="failed-batch">
-      <span>묶음 ${f.idx + 1} 실패: ${escapeAttr(f.error)}</span>
+      <span>묶음 ${f.idx + 1} 실패: ${friendlySummary(f.error)} <details><summary>자세히</summary>${escapeAttr(f.error)}</details></span>
       <button class="btn-secondary btn-retry-batch" data-idx="${f.idx}">다시 시도</button>
     </div>
   `).join('');

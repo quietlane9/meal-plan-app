@@ -27,6 +27,33 @@ function test_sheets() {
   Logger.log('6개 탭 생성/확인 완료');
 }
 
+/**
+ * gemini-3.5-flash-lite에 thinkingConfig 변형별로 같은 최소 요청을 보내 400 원인을 좁힌다.
+ * 편집기에서 실행 후 "실행" 로그에서 어느 변형이 성공/실패(HTTP 코드)했는지 확인한다.
+ */
+function test_plan_minimal() {
+  const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  const parts = [{ text: 'ok를 true로만 응답해라.' }];
+  const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'] };
+  const deadline = Date.now() + 30000;
+
+  const variants = [
+    { label: 'thinkingConfig 없음', config: null },
+    { label: 'thinkingBudget:0', config: { thinkingBudget: 0 } },
+    { label: "thinkingLevel:'low'", config: { thinkingLevel: 'low' } },
+    { label: "thinkingLevel:'minimal'", config: { thinkingLevel: 'minimal' } }
+  ];
+
+  variants.forEach(v => {
+    try {
+      const result = performGeminiRequest_('gemini-3.5-flash-lite', apiKey, parts, schema, 0.1, v.config, 256, deadline);
+      Logger.log('성공 — ' + v.label + ': ' + JSON.stringify(result));
+    } catch (err) {
+      Logger.log('실패 — ' + v.label + ' (HTTP ' + err.httpCode + '): ' + err.message);
+    }
+  });
+}
+
 /** images에 실제 테스트 이미지(base64)를 넣어서 실행한다. */
 function test_extract() {
   const result = actionExtract_({

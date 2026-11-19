@@ -46,11 +46,17 @@ Apps Script 편집기 → 프로젝트 설정 → **스크립트 속성**에서 
 | `GEMINI_API_KEY` | AI Studio에서 발급한 키 |
 | `ACCESS_TOKEN` | 임의로 정한 비밀 문자열(웹앱 호출 인증용) |
 | `SHEET_ID` | 1단계에서 만든 구글시트 ID |
-| `GEMINI_MODEL` | 예: `["gemini-3.5-flash-lite","gemini-3.7-flash"]` (비워두면 이 목록이 기본값) |
+| `GEMINI_MODEL` | 예: `["gemini-3.8-flash","gemini-3.5-flash","gemini-3.6-flash"]` (비워두면 이 목록이 기본값) |
 
-`GEMINI_MODEL`은 모델 하나(문자열) 또는 여러 개(쉼표 목록 `a,b`나 JSON 배열 `["a","b"]`)로 둘 수 있다. 여러 개 적어도 **앞에서부터 최대 2개까지만** 폴백으로 쓴다. 모델 하나당 최초 시도 + 재시도 1회(총 2번)만 하고, 전체 호출(모델·재시도 통틀어)은 90초를 넘기면 바로 실패로 끝낸다. 모델명·시도 번호·소요시간·HTTP 코드는 Apps Script 실행 로그(Logger)에 남는다.
+`GEMINI_MODEL`은 모델 하나(문자열) 또는 여러 개(쉼표 목록 `a,b`나 JSON 배열 `["a","b"]`)로 둘 수 있다. 여러 개 적어도 **앞에서부터 최대 3개까지만** 폴백으로 쓴다.
+- 400(INVALID_ARGUMENT)이면 같은 모델로 thinkingConfig를 `thinkingBudget:0` → `thinkingLevel:'low'` → `thinkingLevel:'minimal'` → 없음 순으로 자동으로 바꿔가며 다시 보낸다. 그래도 400이면 그 모델은 포기하고 다음 모델로 넘어간다.
+- 429(한도 초과)는 같은 모델로 1초 쉬고 한 번만 재시도한다.
+- 503(과부하)은 재시도 없이 바로 다음 모델로 넘어간다.
+- 전체 호출(모델·재시도 통틀어)은 90초를 넘기면 바로 실패로 끝낸다.
 
-이 속성에 이전에 다른 값(예: 특정 모델 하나만)을 넣어둔 적이 있다면 그 값이 계속 우선된다. Apps Script 편집기에서 `reset_gemini_model()` 함수를 한 번 실행하면 위 기본 목록으로 덮어쓴다.
+모델명·시도 번호·입력 문자수·소요시간·HTTP 코드·출력 토큰 수는 Apps Script 실행 로그(console.log)에 남는다. 400이 나면 그 요청의 `generationConfig`·`responseSchema`도 함께 남는다(프롬프트·이미지 본문은 안 남김).
+
+이 속성에 이전에 다른 값(예: 특정 모델 하나만)을 넣어둔 적이 있다면 그 값이 계속 우선된다. Apps Script 편집기에서 `reset_gemini_model()` 함수를 한 번 실행하면 위 기본 목록으로 덮어쓴다. `test_plan_minimal()` 함수는 `gemini-3.5-flash-lite`에 thinkingConfig 변형별로 같은 최소 요청을 보내 400 원인을 좁혀준다.
 
 입력 후 Apps Script 편집기에서 `setup` 함수를 한 번 실행한다. (6개 탭이 없으면 자동 생성, 누락된 속성은 로그에 안내)
 
