@@ -3,20 +3,22 @@
  * - GEMINI_MODEL은 모델 하나(문자열) 또는 여러 개(쉼표 목록 "a,b" 또는 JSON 배열 '["a","b"]')로 둘 수 있지만,
  *   폴백은 앞에서부터 최대 MAX_FALLBACK_MODELS개까지만 쓴다(더 적으면 있는 만큼만).
  * - 400(INVALID_ARGUMENT)은 thinkingConfig 형식을 모델이 거부한 경우가 많아, 같은 모델로
- *   thinkingBudget:0 → thinkingLevel:'low' → thinkingLevel:'minimal' → thinkingConfig 없음 순으로
- *   자동으로 바꿔가며 다시 보낸다. 그래도 400이면 그 모델은 포기하고 다음 모델로 넘어간다.
- *   400이 나면 요청의 generationConfig·responseSchema를 console.log로 남긴다(프롬프트·이미지 본문은 제외).
+ *   thinkingBudget:0 → thinkingLevel:'low' → thinkingConfig 없음 순으로 자동으로 바꿔가며 다시 보낸다
+ *   (thinkingLevel:'minimal'은 실측 58초로 'low'보다 훨씬 느려서 뺐다). 그래도 400이면 그 모델은
+ *   포기하고 다음 모델로 넘어간다. 400이 나면 요청의 generationConfig·responseSchema를 console.log로
+ *   남긴다(프롬프트·이미지 본문은 제외).
  * - 429(한도 초과)는 같은 모델로 1초 쉬고 한 번만 재시도한다. 503(과부하)은 재시도하지 않고
- *   바로 다음 모델로 넘어간다.
+ *   바로 다음 모델로 넘어간다. 무료 등급은 사용량이 몰리면 503이 자주 나는데, 이건 구글 쪽
+ *   처리 지연이라 모델을 여러 개 등록해 두는 것 외에는 코드로 고칠 수 없다.
  * - 전체 호출(모델·재시도 통틀어)은 TOTAL_TIME_BUDGET_MS 안에 끝나야 하며, 넘으면 더 시도하지 않고 바로 실패를 던진다.
  *   (UrlFetchApp은 중간에 끊을 수 없어서, 이미 보낸 요청 자체가 느리면 이 상한을 못 지킬 수 있다.)
  * - 모델명·시도 번호·입력 문자수·소요시간(ms)·HTTP 코드·usageMetadata의 출력 토큰 수를 매 시도마다 console.log로 남긴다.
  */
-const MAX_FALLBACK_MODELS = 3;
+const MAX_FALLBACK_MODELS = 4;
 const MAX_ATTEMPTS_PER_MODEL = 2; // 429 재시도 포함 최대 2번(최초 + 1회)
 const TOTAL_TIME_BUDGET_MS = 90000;
 
-const DEFAULT_GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.6-flash'];
+const DEFAULT_GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.1-flash-lite'];
 
 function resolveGeminiModels_() {
   const raw = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL');
