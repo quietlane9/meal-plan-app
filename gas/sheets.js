@@ -86,3 +86,59 @@ function upsertRow(name, incoming, mergeFn) {
   sheet.appendRow(row);
   return { updated: false };
 }
+
+/**
+ * matchFields(여러 열)로 일치하는 첫 행을 record로 덮어쓰고, 없으면 append한다.
+ * MealPlans처럼 단일 키 열이 없는 탭에 쓴다(week_start+day+slot 조합 등).
+ */
+function upsertByMatch(name, matchFields, record) {
+  const def = SCHEMA[name];
+  const sheet = ensureSheet_(name);
+  const cols = def.columns;
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow >= 2) {
+    const values = sheet.getRange(2, 1, lastRow - 1, cols.length).getValues();
+    for (let i = 0; i < values.length; i++) {
+      const row = values[i];
+      const matches = Object.keys(matchFields).every(key => {
+        const idx = cols.indexOf(key);
+        return idx !== -1 && String(row[idx]) === String(matchFields[key]);
+      });
+      if (matches) {
+        const rowNum = i + 2;
+        const newRow = cols.map((c, idx) => (record[c] !== undefined ? record[c] : row[idx]));
+        sheet.getRange(rowNum, 1, 1, cols.length).setValues([newRow]);
+        return { updated: true };
+      }
+    }
+  }
+
+  const newRow = cols.map(c => (record[c] !== undefined ? record[c] : ''));
+  sheet.appendRow(newRow);
+  return { updated: false };
+}
+
+/** matchFields와 일치하는 모든 행을 지운다. 식단 재생성 전 그 주 기존 행을 비울 때 쓴다. */
+function deleteRowsByMatch(name, matchFields) {
+  const def = SCHEMA[name];
+  const sheet = ensureSheet_(name);
+  const cols = def.columns;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+
+  const values = sheet.getRange(2, 1, lastRow - 1, cols.length).getValues();
+  let deleted = 0;
+  for (let i = values.length - 1; i >= 0; i--) {
+    const row = values[i];
+    const matches = Object.keys(matchFields).every(key => {
+      const idx = cols.indexOf(key);
+      return idx !== -1 && String(row[idx]) === String(matchFields[key]);
+    });
+    if (matches) {
+      sheet.deleteRow(i + 2);
+      deleted++;
+    }
+  }
+  return deleted;
+}

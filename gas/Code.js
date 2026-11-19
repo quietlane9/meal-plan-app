@@ -20,6 +20,18 @@ function doPost(e) {
         return jsonOutput_(actionExtract_(body));
       case 'save':
         return jsonOutput_(actionSave_(body));
+      case 'settings.get':
+        return jsonOutput_(actionSettingsGet_());
+      case 'settings.set':
+        return jsonOutput_(actionSettingsSet_(body));
+      case 'inventory.list':
+        return jsonOutput_(actionInventoryList_());
+      case 'inventory.set':
+        return jsonOutput_(actionInventorySet_(body));
+      case 'plan.generate':
+        return jsonOutput_(actionPlanGenerate_(body));
+      case 'plan.list':
+        return jsonOutput_(actionPlanList_(body));
       default:
         return jsonOutput_({ error: '알 수 없는 action: ' + body.action });
     }

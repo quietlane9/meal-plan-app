@@ -1,10 +1,16 @@
 /**
- * 탭 전환 + 업로드/검수 화면 동작. 이번 단계(Stage 1)는 식단·재고 화면은 자리만 있다.
+ * 탭 전환 + 업로드/검수/식단/설정 화면 동작. 재고 화면은 Stage 3에서 만든다.
  */
 const BATCH_SIZE = 4;
+const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
+const SLOTS = ['아침', '점심', '저녁'];
 
 let selectedFiles = [];
 let reviewItems = []; // { ...추출필드, keep, mergeSelected }
+
+let planMeals = [];
+let planShopping = [];
+let selectedCell = null; // { day, slot }
 
 function initTabs() {
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -17,7 +23,7 @@ function initTabs() {
   });
 }
 
-function initSettingsScreen() {
+async function initSettingsScreen() {
   const tokenInput = document.getElementById('token-input');
   tokenInput.value = getToken();
 
@@ -25,6 +31,239 @@ function initSettingsScreen() {
     setToken(tokenInput.value.trim());
     alert('토큰을 저장했습니다.');
   });
+
+  document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
+
+  try {
+    await loadSettings();
+  } catch (err) {
+    // 토큰이 아직 없을 때는 조용히 넘어간다.
+  }
+}
+
+async function loadSettings() {
+  const { settings } = await callApi('settings.get', {});
+  document.getElementById('setting-headcount').value = settings.headcount || '';
+
+  let slotHeadcount = {};
+  try {
+    slotHeadcount = JSON.parse(settings.slot_headcount || '{}');
+  } catch (err) {
+    slotHeadcount = {};
+  }
+  const weekday = slotHeadcount.weekday || {};
+  const weekend = slotHeadcount.weekend || {};
+  document.getElementById('setting-weekday-breakfast').value = weekday['아침'] ?? '';
+  document.getElementById('setting-weekday-lunch').value = weekday['점심'] ?? '';
+  document.getElementById('setting-weekday-dinner').value = weekday['저녁'] ?? '';
+  document.getElementById('setting-weekend-breakfast').value = weekend['아침'] ?? '';
+  document.getElementById('setting-weekend-lunch').value = weekend['점심'] ?? '';
+  document.getElementById('setting-weekend-dinner').value = weekend['저녁'] ?? '';
+
+  document.getElementById('setting-exclude').value = settings.exclude_foods || '';
+
+  let rules = [];
+  try {
+    rules = JSON.parse(settings.rules || '[]');
+  } catch (err) {
+    rules = [];
+  }
+  document.getElementById('setting-rules').value = rules.join('\n');
+}
+
+async function saveSettings() {
+  const resultEl = document.getElementById('settings-save-result');
+  resultEl.textContent = '저장 중...';
+
+  const slotHeadcount = {
+    weekday: {
+      '아침': Number(document.getElementById('setting-weekday-breakfast').value) || 0,
+      '점심': Number(document.getElementById('setting-weekday-lunch').value) || 0,
+      '저녁': Number(document.getElementById('setting-weekday-dinner').value) || 0
+    },
+    weekend: {
+      '아침': Number(document.getElementById('setting-weekend-breakfast').value) || 0,
+      '점심': Number(document.getElementById('setting-weekend-lunch').value) || 0,
+      '저녁': Number(document.getElementById('setting-weekend-dinner').value) || 0
+    }
+  };
+
+  const rules = document.getElementById('setting-rules').value
+    .split('\n')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  try {
+    await Promise.all([
+      callApi('settings.set', { key: 'headcount', value: document.getElementById('setting-headcount').value }),
+      callApi('settings.set', { key: 'slot_headcount', value: JSON.stringify(slotHeadcount) }),
+      callApi('settings.set', { key: 'exclude_foods', value: document.getElementById('setting-exclude').value }),
+      callApi('settings.set', { key: 'rules', value: JSON.stringify(rules) })
+    ]);
+    resultEl.textContent = '설정을 저장했습니다.';
+  } catch (err) {
+    resultEl.textContent = '오류: ' + err.message;
+  }
+}
+
+function getMondayDateString(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+function initPlanScreen() {
+  const weekInput = document.getElementById('week-start');
+  weekInput.value = getMondayDateString(new Date());
+
+  document.getElementById('btn-generate-plan').addEventListener('click', () => {
+    generatePlan(weekInput.value, null);
+  });
+}
+
+async function generatePlan(weekStart, onlyCells) {
+  const statusEl = document.getElementById('plan-status');
+  statusEl.textContent = onlyCells ? '선택한 칸 다시 짜는 중...' : '식단 생성 중...';
+
+  try {
+    const result = await callApi('plan.generate', {
+      week_start: weekStart,
+      only_cells: onlyCells || undefined
+    });
+    planMeals = result.meals || [];
+    planShopping = result.shopping || [];
+    renderPlanGrid(weekStart);
+    renderPlanDetail();
+    renderShoppingList();
+
+    const violations = checkRules(planMeals, []);
+    if (violations.length === 0) {
+      statusEl.textContent = '완료: 21끼 생성, 규칙 위반 없음';
+      return;
+    }
+
+    statusEl.textContent = `규칙 위반 ${violations.length}건 발견, 해당 칸만 다시 짜는 중...`;
+    const retryCells = Array.from(
+      new Map(violations.map(v => [v.day + v.slot, { day: v.day, slot: v.slot }])).values()
+    );
+    const retryResult = await callApi('plan.generate', { week_start: weekStart, only_cells: retryCells });
+    planMeals = retryResult.meals || [];
+    planShopping = retryResult.shopping || [];
+    renderPlanGrid(weekStart);
+    renderPlanDetail();
+    renderShoppingList();
+
+    const remaining = checkRules(planMeals, []);
+    statusEl.textContent = remaining.length
+      ? `완료 (규칙 위반 ${remaining.length}건 남음)`
+      : '완료: 21끼 생성, 규칙 위반 없음';
+  } catch (err) {
+    statusEl.textContent = '오류: ' + err.message;
+  }
+}
+
+function renderPlanGrid(weekStart) {
+  const grid = document.getElementById('plan-grid');
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const dayDate = {};
+  DAYS.forEach((day, idx) => {
+    const date = new Date(weekStart);
+    date.setDate(date.getDate() + idx);
+    dayDate[day] = date.toISOString().slice(0, 10);
+  });
+
+  let html = '<tr><th></th>' + DAYS.map(day => (
+    `<th class="${dayDate[day] === todayStr ? 'today' : ''}">${day}</th>`
+  )).join('') + '</tr>';
+
+  SLOTS.forEach(slot => {
+    html += `<tr><th>${slot}</th>`;
+    DAYS.forEach(day => {
+      const meal = planMeals.find(m => m.day === day && m.slot === slot);
+      const cellClass = dayDate[day] === todayStr ? 'today' : '';
+      if (meal) {
+        html += `<td class="${cellClass}" data-day="${day}" data-slot="${slot}">
+          <div class="menu">${escapeAttr(meal.menu)}</div>
+          <span class="difficulty-badge" data-level="${escapeAttr(meal.difficulty)}">${escapeAttr(meal.difficulty)}</span>
+        </td>`;
+      } else {
+        html += `<td class="${cellClass} empty" data-day="${day}" data-slot="${slot}">-</td>`;
+      }
+    });
+    html += '</tr>';
+  });
+
+  grid.innerHTML = html;
+
+  grid.querySelectorAll('td[data-day]').forEach(td => {
+    td.addEventListener('click', () => {
+      selectedCell = { day: td.dataset.day, slot: td.dataset.slot };
+      renderPlanDetail();
+    });
+  });
+}
+
+function renderPlanDetail() {
+  const detail = document.getElementById('plan-detail');
+  const meal = selectedCell
+    ? planMeals.find(m => m.day === selectedCell.day && m.slot === selectedCell.slot)
+    : null;
+
+  if (!meal) {
+    detail.classList.add('hidden');
+    return;
+  }
+
+  detail.classList.remove('hidden');
+  detail.innerHTML = `
+    <div class="detail-header">${meal.day} ${meal.slot}</div>
+    <div class="detail-menu">${escapeAttr(meal.menu)}</div>
+    <div class="detail-meta">난도: ${escapeAttr(meal.difficulty)}</div>
+    <div class="detail-meta">재료: ${(meal.uses || []).join(', ') || '없음'}</div>
+    <button id="btn-regenerate-cell" class="btn-secondary">이 칸 다시 짜기</button>
+  `;
+
+  document.getElementById('btn-regenerate-cell').addEventListener('click', () => {
+    const weekStart = document.getElementById('week-start').value;
+    generatePlan(weekStart, [selectedCell]);
+  });
+}
+
+function renderShoppingList() {
+  const list = document.getElementById('shopping-list');
+
+  if (planShopping.length === 0) {
+    list.innerHTML = '<p class="muted">장보기 목록이 없습니다.</p>';
+    return;
+  }
+
+  list.innerHTML = planShopping.map((s, idx) => `
+    <div class="shopping-item">
+      <span class="shopping-name">${escapeAttr(s.name)}</span>
+      <a class="ssg-link" href="https://www.ssg.com/search.ssg?query=${encodeURIComponent(s.name)}" target="_blank" rel="noopener">SSG 검색</a>
+      <button class="btn-have" data-idx="${idx}">집에 있음</button>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('.btn-have').forEach(btn => {
+    btn.addEventListener('click', () => markHaveAtHome(Number(btn.dataset.idx)));
+  });
+}
+
+async function markHaveAtHome(idx) {
+  const item = planShopping[idx];
+  if (!item) return;
+
+  try {
+    await callApi('inventory.set', { item_key: item.item_key, status: '있음' });
+    planShopping = planShopping.filter((_, i) => i !== idx);
+    renderShoppingList();
+  } catch (err) {
+    alert('오류: ' + err.message);
+  }
 }
 
 function initUploadScreen() {
@@ -197,5 +436,6 @@ async function saveReviewedItems() {
 }
 
 initTabs();
+initPlanScreen();
 initUploadScreen();
 initSettingsScreen();

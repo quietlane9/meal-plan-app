@@ -59,7 +59,8 @@ main {
 }
 
 .field select,
-.field input {
+.field input,
+.field textarea {
   display: block;
   width: 100%;
   margin-top: 6px;
@@ -67,6 +68,33 @@ main {
   font-size: 15px;
   border: 1px solid #ccc;
   border-radius: 8px;
+  font-family: inherit;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.field-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.field-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid #e0e0e0;
+  margin: 20px 0;
+}
+
+.section-title {
+  font-size: 15px;
+  margin: 20px 0 8px;
 }
 
 .btn-primary,
@@ -153,6 +181,130 @@ main {
 
 .review-actions.hidden {
   display: none;
+}
+
+.plan-grid {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 12px;
+}
+
+.plan-grid th,
+.plan-grid td {
+  border: 1px solid #e0e0e0;
+  padding: 6px 4px;
+  text-align: center;
+  vertical-align: top;
+}
+
+.plan-grid th {
+  background: #f0f0f0;
+}
+
+.plan-grid td.empty {
+  color: #bbb;
+}
+
+.plan-grid td.today,
+.plan-grid th.today {
+  background: #eaf5ee;
+}
+
+.plan-grid .menu {
+  font-size: 11px;
+  line-height: 1.3;
+  margin-bottom: 4px;
+  word-break: keep-all;
+}
+
+.difficulty-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: #e9ecef;
+  color: #555;
+}
+
+.difficulty-badge[data-level="쉬움"] {
+  background: #d8f0e0;
+  color: #1b6b3c;
+}
+
+.difficulty-badge[data-level="보통"] {
+  background: #fff1cc;
+  color: #8a6400;
+}
+
+.difficulty-badge[data-level="손 많이 감"] {
+  background: #fde0e0;
+  color: #a33;
+}
+
+.plan-detail {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  padding: 14px;
+  margin: 10px 0;
+}
+
+.plan-detail.hidden {
+  display: none;
+}
+
+.plan-detail .detail-header {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.plan-detail .detail-menu {
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.plan-detail .detail-meta {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.shopping-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shopping-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.shopping-item .shopping-name {
+  flex: 1;
+  font-size: 14px;
+}
+
+.shopping-item .ssg-link {
+  font-size: 12px;
+  color: #2d6a4f;
+  white-space: nowrap;
+}
+
+.shopping-item .btn-have {
+  font-size: 12px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: #e9ecef;
+  color: #333;
+  white-space: nowrap;
 }
 
 .tabbar {

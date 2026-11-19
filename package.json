@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "description": "주간 식단 앱 — web/lib 순수 로직 테스트 러너",
   "scripts": {
-    "test": "node web/test/itemKey.test.js && node web/test/merge.test.js"
+    "test": "node web/test/itemKey.test.js && node web/test/merge.test.js && node web/test/rules.test.js"
   }
 }

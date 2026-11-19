@@ -10,11 +10,24 @@
   <header class="app-header">주간 식단 앱</header>
 
   <main>
-    <section id="screen-plan" class="screen">
-      <p class="placeholder">식단 화면은 Stage 2에서 만듭니다.</p>
+    <section id="screen-plan" class="screen active">
+      <label class="field">
+        주 시작일(월요일)
+        <input id="week-start" type="date" />
+      </label>
+      <button id="btn-generate-plan" class="btn-primary">이번 주 식단 만들기</button>
+
+      <div id="plan-status" class="muted"></div>
+
+      <table id="plan-grid" class="plan-grid"></table>
+
+      <div id="plan-detail" class="plan-detail hidden"></div>
+
+      <h3 class="section-title">장보기 목록</h3>
+      <div id="shopping-list" class="shopping-list"></div>
     </section>
 
-    <section id="screen-upload" class="screen active">
+    <section id="screen-upload" class="screen">
       <div class="privacy-warning">
         ⚠️ 주소·이름·전화번호·카드번호가 보이면 잘라서 올리세요.
       </div>
@@ -54,12 +67,52 @@
     </section>
 
     <section id="screen-settings" class="screen">
+      <h3 class="section-title">식단 설정</h3>
+
+      <label class="field">
+        식구 수
+        <input id="setting-headcount" type="number" min="1" />
+      </label>
+
+      <div class="field">
+        끼니별 인원(평일)
+        <div class="field-row">
+          <input id="setting-weekday-breakfast" type="number" min="0" placeholder="아침" />
+          <input id="setting-weekday-lunch" type="number" min="0" placeholder="점심" />
+          <input id="setting-weekday-dinner" type="number" min="0" placeholder="저녁" />
+        </div>
+      </div>
+
+      <div class="field">
+        끼니별 인원(주말)
+        <div class="field-row">
+          <input id="setting-weekend-breakfast" type="number" min="0" placeholder="아침" />
+          <input id="setting-weekend-lunch" type="number" min="0" placeholder="점심" />
+          <input id="setting-weekend-dinner" type="number" min="0" placeholder="저녁" />
+        </div>
+      </div>
+
+      <label class="field">
+        빼고 싶은 음식(쉼표로 구분)
+        <input id="setting-exclude" type="text" placeholder="예: 가지, 고수" />
+      </label>
+
+      <label class="field">
+        규칙(한 줄에 하나씩)
+        <textarea id="setting-rules" rows="4" placeholder="예: 밀키트 주 3회 이하"></textarea>
+      </label>
+
+      <button id="btn-save-settings" class="btn-primary">설정 저장</button>
+      <div id="settings-save-result" class="muted"></div>
+
+      <hr class="divider" />
+
       <label class="field">
         접속 토큰(ACCESS_TOKEN)
         <input id="token-input" type="password" placeholder="GAS Script Properties의 ACCESS_TOKEN과 동일하게" />
       </label>
       <button id="btn-save-token" class="btn-primary">토큰 저장</button>
-      <p class="muted">이 기기의 브라우저에만 저장됩니다. 식구 수 등 나머지 설정은 Stage 2에서 추가합니다.</p>
+      <p class="muted">토큰은 이 기기의 브라우저에만 저장됩니다.</p>
     </section>
   </main>
 
@@ -73,6 +126,7 @@
   <script src="config.js"></script>
   <script src="lib/itemKey.js"></script>
   <script src="lib/merge.js"></script>
+  <script src="lib/rules.js"></script>
   <script src="image.js"></script>
   <script src="api.js"></script>
   <script src="app.js"></script>
