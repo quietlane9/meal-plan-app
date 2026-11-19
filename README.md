@@ -46,7 +46,9 @@ Apps Script 편집기 → 프로젝트 설정 → **스크립트 속성**에서 
 | `GEMINI_API_KEY` | AI Studio에서 발급한 키 |
 | `ACCESS_TOKEN` | 임의로 정한 비밀 문자열(웹앱 호출 인증용) |
 | `SHEET_ID` | 1단계에서 만든 구글시트 ID |
-| `GEMINI_MODEL` | 예: `gemini-2.0-flash` |
+| `GEMINI_MODEL` | 예: `gemini-2.0-flash-lite` 또는 `["gemini-2.0-flash-lite","gemini-2.0-flash"]` |
+
+`GEMINI_MODEL`은 모델 하나(문자열) 또는 여러 개(쉼표 목록 `a,b,c`나 JSON 배열 `["a","b"]`)로 둘 수 있다. 여러 개면 앞에서부터 순서대로 시도하다, 한 모델이 (재시도 후에도) 계속 실패하면 자동으로 다음 모델로 넘어간다. 가볍고 빠른 lite 모델을 앞에 두면 평소엔 빨리 끝나고 느려지거나 막힐 때만 더 무거운 모델로 전환된다.
 
 입력 후 Apps Script 편집기에서 `setup` 함수를 한 번 실행한다. (6개 탭이 없으면 자동 생성, 누락된 속성은 로그에 안내)
 
