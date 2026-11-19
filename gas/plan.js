@@ -63,7 +63,9 @@ function actionPlanGenerate_(body) {
     : [];
 
   const prompt = buildPlanPrompt_({ weekStart, items, inventory, settings, onlyCells, existingMeals });
-  const result = callGeminiJson_([{ text: prompt }], PLAN_SCHEMA, 0.7);
+  // 생각(thinking)을 켜 두면 21끼+가벼운 한 끼+장보기를 한 번에 구조화하는 동안
+  // 모델이 응답 없이 아주 오래 멈출 수 있어(UrlFetchApp은 타임아웃을 못 건다) 꺼 둔다.
+  const result = callGeminiJson_([{ text: prompt }], PLAN_SCHEMA, 0.7, { thinkingConfig: { thinkingBudget: 0 } });
   const meals = result.meals || [];
 
   if (onlyCells) {
