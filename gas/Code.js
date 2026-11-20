@@ -36,6 +36,8 @@ function doPost(e) {
         return jsonOutput_(actionPlanLightOptions_(body));
       case 'plan.list':
         return jsonOutput_(actionPlanList_(body));
+      case 'meal.update':
+        return jsonOutput_(actionMealUpdate_(body));
       default:
         return jsonOutput_({ error: '알 수 없는 action: ' + body.action });
     }
@@ -103,12 +105,9 @@ function actionSave_(body) {
     });
 
     // 자주구매는 과거 전체 구매 목록일 뿐 이번 재고가 아니므로 Inventory는 건드리지 않는다.
+    // '있음'으로 되돌리는 로직(소비기한 재계산, emptied_at 비우기 포함)은 inventory.js와 같다.
     if (uploadType !== '자주구매') {
-      upsertRow('Inventory', {
-        item_key: itemKey,
-        status: '있음',
-        bought_at: now
-      });
+      actionInventorySet_({ item_key: itemKey, status: '있음' });
     }
   });
 

@@ -73,7 +73,12 @@
     </section>
 
     <section id="screen-inventory" class="screen">
-      <p class="placeholder">재고 화면은 Stage 3에서 만듭니다.</p>
+      <div class="storage-tabs">
+        <button class="storage-tab-btn active" data-storage="냉장">냉장</button>
+        <button class="storage-tab-btn" data-storage="냉동">냉동</button>
+        <button class="storage-tab-btn" data-storage="실온">실온</button>
+      </div>
+      <div id="inventory-list" class="inventory-list"></div>
     </section>
 
     <section id="screen-settings" class="screen">

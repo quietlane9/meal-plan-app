@@ -43,6 +43,7 @@ function initTabs() {
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('screen-' + btn.dataset.screen).classList.add('active');
+      if (btn.dataset.screen === 'inventory') loadInventory();
     });
   });
 }
@@ -329,9 +330,13 @@ function renderPlanGrid(weekStart) {
       const meal = planMeals.find(m => m.day === day && m.slot === slot);
       const cellClass = dayDate[day] === todayStr ? 'today' : '';
       if (meal) {
+        const statusTag = meal.status && meal.status !== '예정'
+          ? `<span class="grid-status-tag">${escapeAttr(meal.status)}</span>`
+          : '';
         html += `<td class="${cellClass}" data-day="${day}" data-slot="${slot}">
           <div class="menu">${escapeAttr(meal.menu)}</div>
           <span class="difficulty-badge" data-level="${escapeAttr(meal.difficulty)}">${escapeAttr(meal.difficulty)}</span>
+          ${statusTag}
         </td>`;
       } else {
         html += `<td class="${cellClass} empty" data-day="${day}" data-slot="${slot}">-</td>`;
@@ -361,19 +366,149 @@ function renderPlanDetail() {
     return;
   }
 
+  const statusTag = meal.status && meal.status !== '예정'
+    ? `<span class="status-tag">${escapeAttr(meal.status)}</span>`
+    : '';
+
   detail.classList.remove('hidden');
   detail.innerHTML = `
-    <div class="detail-header">${meal.day} ${meal.slot}</div>
+    <div class="detail-header">${meal.day} ${meal.slot}${statusTag}</div>
     <div class="detail-menu">${escapeAttr(meal.menu)}</div>
     <div class="detail-meta">난도: ${escapeAttr(meal.difficulty)}</div>
     <div class="detail-meta">재료: ${(meal.uses || []).join(', ') || '없음'}</div>
-    <button id="btn-regenerate-cell" class="btn-secondary">이 칸 다시 짜기</button>
+    <div class="detail-actions">
+      <button class="btn-secondary" data-action="먹음">먹음</button>
+      <button class="btn-secondary" data-action="외식">외식</button>
+      <button id="btn-regenerate-cell" class="btn-secondary">바꾸기</button>
+    </div>
+    <div class="detail-actions">
+      <button class="btn-secondary" data-rating="좋아요">좋아요</button>
+      <button class="btn-secondary" data-rating="싫어요">싫어요</button>
+    </div>
+    <div id="reason-chips" class="reason-chips hidden"></div>
   `;
+
+  detail.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => updateMealStatus(selectedCell, btn.dataset.action));
+  });
+  detail.querySelector('[data-rating="좋아요"]').addEventListener('click', () => updateMealRating(selectedCell, '좋아요', ''));
+  detail.querySelector('[data-rating="싫어요"]').addEventListener('click', () => showReasonChips(selectedCell));
 
   document.getElementById('btn-regenerate-cell').addEventListener('click', () => {
     const weekStart = document.getElementById('week-start').value;
     generatePlan(weekStart, [selectedCell]);
   });
+}
+
+function showReasonChips(cell) {
+  const container = document.getElementById('reason-chips');
+  const reasons = ['맛없음', '양 적음', '질림', '손 많이 감'];
+  container.classList.remove('hidden');
+  container.innerHTML = reasons.map(r => `<button class="chip" data-reason="${r}">${r}</button>`).join('');
+  container.querySelectorAll('.chip').forEach(btn => {
+    btn.addEventListener('click', () => updateMealRating(cell, '싫어요', btn.dataset.reason));
+  });
+}
+
+async function updateMealStatus(cell, status) {
+  const weekStart = document.getElementById('week-start').value;
+  try {
+    await callApi('meal.update', { week_start: weekStart, day: cell.day, slot: cell.slot, status: status });
+    applyLocalMealUpdate(cell, { status: status });
+    renderPlanGrid(weekStart);
+    renderPlanDetail();
+  } catch (err) {
+    alert(friendlySummary(err.message));
+  }
+}
+
+async function updateMealRating(cell, rating, reason) {
+  const weekStart = document.getElementById('week-start').value;
+  try {
+    await callApi('meal.update', { week_start: weekStart, day: cell.day, slot: cell.slot, rating: rating, reason: reason });
+    applyLocalMealUpdate(cell, { rating: rating });
+    renderPlanDetail();
+  } catch (err) {
+    alert(friendlySummary(err.message));
+  }
+}
+
+function applyLocalMealUpdate(cell, patch) {
+  const meal = planMeals.find(m => m.day === cell.day && m.slot === cell.slot);
+  if (meal) Object.assign(meal, patch);
+}
+
+let inventoryRows = [];
+let currentStorageTab = '냉장';
+
+function initInventoryScreen() {
+  document.querySelectorAll('.storage-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.storage-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentStorageTab = btn.dataset.storage;
+      renderInventoryList();
+    });
+  });
+}
+
+async function loadInventory() {
+  const list = document.getElementById('inventory-list');
+  try {
+    const result = await callApi('inventory.list', {});
+    inventoryRows = result.rows || [];
+    renderInventoryList();
+  } catch (err) {
+    list.innerHTML = `<p class="muted">${errorHtml(err)}</p>`;
+  }
+}
+
+/** 소비기한(추정)이 임박한 순서로 보여준다. 재고가 '없음'인 품목은 서버에서 이미 빠져 있다. */
+function renderInventoryList() {
+  const list = document.getElementById('inventory-list');
+  const rows = inventoryRows.filter(r => r.storage === currentStorageTab);
+
+  if (rows.length === 0) {
+    list.innerHTML = '<p class="muted">없음</p>';
+    return;
+  }
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  list.innerHTML = rows.map((r, idx) => {
+    const dday = r.expected_until
+      ? Math.round((new Date(r.expected_until) - new Date(todayStr)) / 86400000)
+      : null;
+    const ddayText = dday === null
+      ? '소비기한 정보 없음'
+      : (dday >= 0 ? `D-${dday}(추정)` : '소비기한 지남(추정)');
+
+    return `
+      <div class="inventory-item" data-idx="${idx}">
+        <div class="inventory-name">${escapeAttr(r.name)}</div>
+        <div class="inventory-meta">
+          <span class="status-badge" data-status="${escapeAttr(r.status)}">${escapeAttr(r.status)}</span>
+          <span>구매일 ${escapeAttr(r.bought_at || '-')}</span>
+          <span>${ddayText}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  list.querySelectorAll('.inventory-item').forEach(el => {
+    el.addEventListener('click', () => cycleInventoryStatus(rows[Number(el.dataset.idx)]));
+  });
+}
+
+/** 누를 때마다 있음→조금→없음. '없음'이 되면 다음 불러올 때 목록에서 빠진다. */
+async function cycleInventoryStatus(row) {
+  const next = row.status === '있음' ? '조금' : '없음';
+  try {
+    await callApi('inventory.set', { item_key: row.item_key, status: next });
+    await loadInventory();
+  } catch (err) {
+    alert(friendlySummary(err.message));
+  }
 }
 
 function renderShoppingList() {
@@ -634,4 +769,5 @@ async function saveReviewedItems() {
 initTabs();
 initPlanScreen();
 initUploadScreen();
+initInventoryScreen();
 initSettingsScreen();
