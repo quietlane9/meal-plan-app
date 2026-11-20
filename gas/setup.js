@@ -22,6 +22,16 @@ function reset_gemini_model() {
   Logger.log('GEMINI_MODEL을 ' + JSON.stringify(DEFAULT_GEMINI_MODELS) + '로 재설정했습니다.');
 }
 
+/**
+ * weekStart('yyyy-MM-dd')에 해당하는 MealPlans 행을 전부 지운다.
+ * week_start가 한때 Date로 자동 변환돼 매칭이 깨지면서 같은 주에 행이 계속 쌓인 걸
+ * 치울 때 쓴다. 지운 뒤 식단을 다시 생성하면 된다.
+ */
+function cleanup_week(weekStart) {
+  const deleted = deleteRowsByMatch('MealPlans', { week_start: weekStart });
+  Logger.log('week_start=' + weekStart + ' 행 ' + deleted + '개 삭제');
+}
+
 function test_sheets() {
   ensureAllSheets();
   Logger.log('6개 탭 생성/확인 완료');
