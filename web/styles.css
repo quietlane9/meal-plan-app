@@ -238,6 +238,7 @@ details[open] summary {
   border-collapse: collapse;
   margin: 10px 0;
   font-size: 12px;
+  table-layout: fixed;
 }
 
 .plan-grid th,
@@ -246,6 +247,12 @@ details[open] summary {
   padding: 6px 4px;
   text-align: center;
   vertical-align: top;
+  word-break: keep-all;
+}
+
+.plan-grid th:first-child,
+.plan-grid td:first-child {
+  width: 34px;
 }
 
 .plan-grid th {
@@ -262,10 +269,16 @@ details[open] summary {
 }
 
 .plan-grid .menu {
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.3;
+  margin-bottom: 2px;
+}
+
+.plan-grid .sides {
+  font-size: 10px;
+  color: #777;
   line-height: 1.3;
   margin-bottom: 4px;
-  word-break: keep-all;
 }
 
 .difficulty-badge {

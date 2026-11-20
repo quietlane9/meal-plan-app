@@ -315,31 +315,40 @@ async function loadLightOptions() {
   }
 }
 
+/**
+ * 요일을 행, 끼니를 열로 둔다(요일을 열로 두면 모바일 폭에 8칸이 들어가야 해서 가로 스크롤이
+ * 생기고 하단 탭바까지 같이 늘어나 버렸다 — 3칸(아침/점심/저녁)이면 좁은 화면에도 맞는다).
+ */
+/** 저장값(status)은 spec의 예정/먹음/바뀜/외식 그대로 두고, 화면 표시만 자연스럽게 바꾼다. */
+function statusLabel(status) {
+  return status === '먹음' ? '먹었음' : status;
+}
+
 function renderPlanGrid(weekStart) {
   const grid = document.getElementById('plan-grid');
   const todayStr = new Date().toISOString().slice(0, 10);
   const dayDate = computeDayDates(weekStart);
 
-  let html = '<tr><th></th>' + DAYS.map(day => (
-    `<th class="${dayDate[day] === todayStr ? 'today' : ''}">${day}</th>`
-  )).join('') + '</tr>';
+  let html = '<tr><th></th>' + SLOTS.map(slot => `<th>${slot}</th>`).join('') + '</tr>';
 
-  SLOTS.forEach(slot => {
-    html += `<tr><th>${slot}</th>`;
-    DAYS.forEach(day => {
+  DAYS.forEach(day => {
+    const rowClass = dayDate[day] === todayStr ? 'today' : '';
+    html += `<tr><th class="${rowClass}">${day}</th>`;
+    SLOTS.forEach(slot => {
       const meal = planMeals.find(m => m.day === day && m.slot === slot);
-      const cellClass = dayDate[day] === todayStr ? 'today' : '';
       if (meal) {
         const statusTag = meal.status && meal.status !== '예정'
-          ? `<span class="grid-status-tag">${escapeAttr(meal.status)}</span>`
+          ? `<span class="grid-status-tag">${escapeAttr(statusLabel(meal.status))}</span>`
           : '';
-        html += `<td class="${cellClass}" data-day="${day}" data-slot="${slot}">
+        const sidesText = (meal.sides || []).length ? `<div class="sides">+ ${escapeAttr(meal.sides.join(', '))}</div>` : '';
+        html += `<td class="${rowClass}" data-day="${day}" data-slot="${slot}">
           <div class="menu">${escapeAttr(meal.menu)}</div>
+          ${sidesText}
           <span class="difficulty-badge" data-level="${escapeAttr(meal.difficulty)}">${escapeAttr(meal.difficulty)}</span>
           ${statusTag}
         </td>`;
       } else {
-        html += `<td class="${cellClass} empty" data-day="${day}" data-slot="${slot}">-</td>`;
+        html += `<td class="${rowClass} empty" data-day="${day}" data-slot="${slot}">-</td>`;
       }
     });
     html += '</tr>';
@@ -367,17 +376,22 @@ function renderPlanDetail() {
   }
 
   const statusTag = meal.status && meal.status !== '예정'
-    ? `<span class="status-tag">${escapeAttr(meal.status)}</span>`
+    ? `<span class="status-tag">${escapeAttr(statusLabel(meal.status))}</span>`
+    : '';
+
+  const sidesLine = (meal.sides || []).length
+    ? `<div class="detail-meta">반찬: ${escapeAttr(meal.sides.join(', '))}</div>`
     : '';
 
   detail.classList.remove('hidden');
   detail.innerHTML = `
     <div class="detail-header">${meal.day} ${meal.slot}${statusTag}</div>
     <div class="detail-menu">${escapeAttr(meal.menu)}</div>
+    ${sidesLine}
     <div class="detail-meta">난도: ${escapeAttr(meal.difficulty)}</div>
     <div class="detail-meta">재료: ${(meal.uses || []).join(', ') || '없음'}</div>
     <div class="detail-actions">
-      <button class="btn-secondary" data-action="먹음">먹음</button>
+      <button class="btn-secondary" data-action="먹음">먹었음</button>
       <button class="btn-secondary" data-action="외식">외식</button>
       <button id="btn-regenerate-cell" class="btn-secondary">바꾸기</button>
     </div>

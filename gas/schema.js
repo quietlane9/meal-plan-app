@@ -10,6 +10,10 @@
  *   (week_start, Feedback.date). 시트가 문자열을 날짜로 자동 변환하지 못하게 열 서식을
  *   텍스트('@')로 미리 지정해 둔다. bought_at 등 실제 타임스탬프 열은 Date 그대로 써도 되므로
  *   여기엔 넣지 않는다.
+ *
+ * 열을 새로 추가할 때는 항상 그 탭의 columns 배열 맨 끝에 붙인다. 중간에 끼워 넣으면
+ * 이미 데이터가 있는 시트의 기존 열과 어긋난다(sheets.js의 migrateHeader_는 끝에
+ * 모자란 헤더만 채워 넣지, 중간 삽입은 처리하지 않는다).
  */
 const SCHEMA = {
   Items: {
@@ -31,7 +35,7 @@ const SCHEMA = {
     dateColumns: ['bought_at', 'expected_until', 'emptied_at']
   },
   MealPlans: {
-    columns: ['week_start', 'day', 'slot', 'menu', 'uses', 'difficulty', 'kind', 'status', 'rating'],
+    columns: ['week_start', 'day', 'slot', 'menu', 'uses', 'difficulty', 'kind', 'status', 'rating', 'sides'],
     dateColumns: ['week_start'],
     textDateColumns: ['week_start']
   },

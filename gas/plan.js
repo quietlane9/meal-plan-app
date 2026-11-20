@@ -23,7 +23,7 @@ const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const SLOTS = ['아침', '점심', '저녁'];
 const DIFFICULTIES = ['쉬움', '보통', '손 많이 감'];
 const TOP_ITEMS_LIMIT = 30;
-const PLAN_MAX_OUTPUT_TOKENS = 1536;
+const PLAN_MAX_OUTPUT_TOKENS = 1792; // sides 추가로 meal당 출력이 조금 늘어 여유를 둠
 const LIGHT_MAX_OUTPUT_TOKENS = 512;
 
 /**
@@ -45,6 +45,7 @@ function buildPlanSchema_(cellCount) {
             day: { type: 'string', enum: DAYS },
             slot: { type: 'string', enum: SLOTS },
             menu: { type: 'string' },
+            sides: { type: 'array', items: { type: 'string' }, maxItems: 2 },
             uses: { type: 'array', items: { type: 'integer' } },
             difficulty: { type: 'string', enum: DIFFICULTIES }
           },
@@ -115,6 +116,7 @@ function actionPlanGenerate_(body) {
     day: m.day,
     slot: m.slot,
     menu: m.menu,
+    sides: (m.sides || []).slice(0, 2),
     uses: resolveUsesKeys_(m.uses, compact.keys),
     difficulty: m.difficulty
   }));
@@ -145,6 +147,7 @@ function actionPlanCommit_(body) {
       day: m.day,
       slot: m.slot,
       menu: m.menu,
+      sides: Array.isArray(m.sides) ? m.sides.join(',') : (m.sides || ''),
       uses: Array.isArray(m.uses) ? m.uses.join(',') : (m.uses || ''),
       difficulty: m.difficulty,
       kind: m.kind || '기본',
@@ -216,6 +219,7 @@ function formatMealRow_(m) {
     day: m.day,
     slot: m.slot,
     menu: m.menu,
+    sides: m.sides ? String(m.sides).split(',').filter(Boolean) : [],
     uses: m.uses ? String(m.uses).split(',').filter(Boolean) : [],
     difficulty: m.difficulty,
     kind: m.kind,
@@ -284,10 +288,13 @@ function buildPlanPrompt_(ctx) {
     '[제외 음식] ' + (settings.exclude_foods || '없음'),
     '[규칙] ' + (settings.rules || ''),
     '재고 있음·조금 품목을 먼저 쓰되(없음은 빼고, 조금은 곁들임으로만), 재고 표시가 없으면 구매횟수 기준으로 골라라.',
+    '한 끼니는 보통 메인 요리 1개 + 반찬 0~2개를 같이 먹는 조합이다.',
+    'menu에는 메인 요리(또는 단품이면 그 자체)만 넣고, 같이 먹는 반찬이 있으면 sides에 0~2개 짧게 넣어라.',
+    '아침·간식처럼 원래 단품으로 먹는 끼니는 sides를 빈 배열로 둬라.',
     '같은 메인 메뉴는 3일 안에 반복하지 마라. 찌개류는 하루 한 번까지.',
     '아침은 유제품·유부초밥·샌드위치·과일 조합으로 가볍게 짜라.',
-    '메뉴명은 짧게 써라(10자 이내 권장).',
-    'uses는 위 [품목] 번호만 정수 배열로 넣어라. 재료가 필요 없으면 빈 배열.',
+    'menu·sides 모두 짧게 써라(각 10자 이내 권장).',
+    'uses에는 menu와 sides에 쓰인 재료를 모두 포함해 위 [품목] 번호로 넣어라. 재료가 필요 없으면 빈 배열.',
     '각 끼니에 난도(쉬움/보통/손 많이 감)를 붙여라.'
   ];
 

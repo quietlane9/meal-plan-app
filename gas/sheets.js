@@ -30,8 +30,21 @@ function ensureSheet_(name) {
     sheet.getRange(1, 1, 1, def.columns.length).setValues([def.columns]);
     sheet.setFrozenRows(1);
   }
+  migrateHeader_(sheet, def);
   applyTextFormatToDateColumns_(sheet, def);
   return sheet;
+}
+
+/**
+ * 기존 시트에 열이 새로 추가됐으면(예: MealPlans.sides) 헤더 끝에 모자란 열 이름을 채워 넣는다.
+ * schema.js의 columns는 항상 끝에만 추가하기로 해서, 기존 데이터 위치는 그대로 두고 안전하다.
+ */
+function migrateHeader_(sheet, def) {
+  const currentWidth = sheet.getLastColumn();
+  if (currentWidth >= def.columns.length) return;
+
+  const missingColumns = def.columns.slice(currentWidth);
+  sheet.getRange(1, currentWidth + 1, 1, missingColumns.length).setValues([missingColumns]);
 }
 
 /** textDateColumns로 지정된 열의 서식을 텍스트로 고정한다. 매번 호출해도 안전(idempotent)하다. */
