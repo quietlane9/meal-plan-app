@@ -138,9 +138,8 @@ function getMondayDateString(date) {
   return d.toISOString().slice(0, 10);
 }
 
-const WEEK_GROUP_1 = ['월', '화', '수', '목'];
-const WEEK_GROUP_2 = ['금', '토', '일'];
 const PLAN_CALL_TIMEOUT_MS = 90000; // gas/gemini.js의 전체 시간 상한(90초)과 맞춤
+const CELL_CHUNK_SIZE = 12; // 한 번의 plan.generate 호출에 넣는 최대 칸 수
 
 function cellsForDays(days) {
   const cells = [];
@@ -148,60 +147,31 @@ function cellsForDays(days) {
   return cells;
 }
 
-function initPlanScreen() {
-  const weekInput = document.getElementById('week-start');
-  weekInput.value = getMondayDateString(new Date());
+function allCells() {
+  return cellsForDays(DAYS);
+}
 
-  document.getElementById('btn-generate-plan').addEventListener('click', () => {
-    generatePlan(weekInput.value);
+function computeDayDates(weekStart) {
+  const map = {};
+  DAYS.forEach((day, idx) => {
+    const date = new Date(weekStart);
+    date.setDate(date.getDate() + idx);
+    map[day] = date.toISOString().slice(0, 10);
   });
-
-  document.getElementById('btn-light-options').addEventListener('click', loadLightOptions);
+  return map;
 }
 
-/**
- * 7일을 한 번에 요청하면 응답이 200~360초까지 걸려 GAS 6분 제한에 걸리는 걸 확인했다.
- * 그래서 항상 월~목 / 금~일로 나눠 두 번 호출한다(각각 90초 상한).
- */
-async function generatePlan(weekStart) {
-  const statusEl = document.getElementById('plan-status');
-
-  try {
-    statusEl.textContent = '식단 생성 중... (1/2: 월~목)';
-    const r1 = await callApi('plan.generate', {
-      week_start: weekStart,
-      only_cells: cellsForDays(WEEK_GROUP_1),
-      replace_week: true
-    }, PLAN_CALL_TIMEOUT_MS);
-    planMeals = r1.meals || [];
-    planShopping = r1.shopping || [];
-    renderPlanGrid(weekStart);
-    renderShoppingList();
-
-    statusEl.textContent = '식단 생성 중... (2/2: 금~일)';
-    const r2 = await callApi('plan.generate', {
-      week_start: weekStart,
-      only_cells: cellsForDays(WEEK_GROUP_2),
-      replace_week: false
-    }, PLAN_CALL_TIMEOUT_MS);
-    planMeals = r2.meals || [];
-    planShopping = r2.shopping || [];
-    renderPlanGrid(weekStart);
-    renderShoppingList();
-
-    await fixRuleViolations(weekStart);
-  } catch (err) {
-    statusEl.innerHTML = errorHtml(err);
-  }
+function hasExistingPlan() {
+  return planMeals.some(m => m.menu);
 }
 
-function missingCells(meals) {
-  return cellsForDays(DAYS).filter(c => !meals.some(m => m.day === c.day && m.slot === c.slot && m.menu));
+function updateGenerateButtonLabel() {
+  document.getElementById('btn-generate-plan').textContent = hasExistingPlan() ? '새로 만들기' : '이번 주 식단 만들기';
 }
 
-/** 실제로 몇 칸이 채워졌는지 확인하고 요약한다. checkRules가 빈 planMeals도 "위반 없음"으로 보길래, 채움 여부를 직접 센다. */
+/** 실제로 몇 칸이 채워졌는지 확인하고 요약한다. checkRules가 빈 식단도 "위반 없음"으로 보길래, 채움 여부를 직접 센다. */
 function describePlanStatus(meals) {
-  const filled = 21 - missingCells(meals).length;
+  const filled = allCells().filter(c => meals.some(m => m.day === c.day && m.slot === c.slot && m.menu)).length;
   if (filled < 21) {
     return `${filled}/21끼만 채워졌습니다. 다시 시도하거나 빈 칸을 눌러 다시 짜 보세요.`;
   }
@@ -211,54 +181,114 @@ function describePlanStatus(meals) {
     : '완료: 21끼 생성, 규칙 위반 없음';
 }
 
-async function fixRuleViolations(weekStart) {
-  const statusEl = document.getElementById('plan-status');
-  const violations = checkRules(planMeals, []);
-  const missing = missingCells(planMeals);
-  const retryCells = Array.from(
-    new Map(violations.concat(missing).map(v => [v.day + v.slot, { day: v.day, slot: v.slot }])).values()
-  );
+function initPlanScreen() {
+  const weekInput = document.getElementById('week-start');
+  weekInput.value = getMondayDateString(new Date());
 
-  if (retryCells.length === 0) {
-    statusEl.textContent = describePlanStatus(planMeals);
-    return;
-  }
+  weekInput.addEventListener('change', () => loadPlanForWeek(weekInput.value));
+  document.getElementById('btn-generate-plan').addEventListener('click', () => onGenerateClick(weekInput.value));
+  document.getElementById('btn-light-options').addEventListener('click', loadLightOptions);
 
-  statusEl.textContent = missing.length
-    ? `빈 칸 ${missing.length}개(규칙 위반 ${violations.length}건 포함) 다시 짜는 중...`
-    : `규칙 위반 ${violations.length}건 발견, 해당 칸만 다시 짜는 중...`;
-
-  const retryResult = await callApi('plan.generate', {
-    week_start: weekStart,
-    only_cells: retryCells,
-    replace_week: false
-  }, PLAN_CALL_TIMEOUT_MS);
-  planMeals = retryResult.meals || [];
-  planShopping = retryResult.shopping || [];
-  renderPlanGrid(weekStart);
-  renderPlanDetail();
-  renderShoppingList();
-
-  statusEl.textContent = describePlanStatus(planMeals);
+  loadPlanForWeek(weekInput.value);
 }
 
-async function regenerateCell(weekStart, cell) {
+/** 탭을 열거나 주를 바꾸면 먼저 저장된 식단을 불러와 표에 보여준다. */
+async function loadPlanForWeek(weekStart) {
   const statusEl = document.getElementById('plan-status');
-  statusEl.textContent = '선택한 칸 다시 짜는 중...';
+  statusEl.textContent = '불러오는 중...';
 
   try {
-    const result = await callApi('plan.generate', {
-      week_start: weekStart,
-      only_cells: [cell],
-      replace_week: false
-    }, PLAN_CALL_TIMEOUT_MS);
+    const result = await callApi('plan.list', { week_start: weekStart });
     planMeals = result.meals || [];
     planShopping = result.shopping || [];
     renderPlanGrid(weekStart);
     renderPlanDetail();
     renderShoppingList();
-    statusEl.textContent = '완료';
+    updateGenerateButtonLabel();
+    statusEl.textContent = hasExistingPlan() ? describePlanStatus(planMeals) : '';
   } catch (err) {
+    statusEl.innerHTML = errorHtml(err);
+  }
+}
+
+/**
+ * 메인 버튼 클릭. 이미 식단이 있으면("새로 만들기") 확인을 받고, '오늘 이후만 다시 짜기'가
+ * 켜져 있으면 지난 날과 먹음·외식 칸은 대상에서 뺀다. 처음 만들 때는 항상 21칸 전체를 만든다.
+ */
+async function onGenerateClick(weekStart) {
+  const existing = hasExistingPlan();
+  if (existing) {
+    const ok = confirm('기존 식단을 새로 만든 식단으로 바꿀까요?');
+    if (!ok) return;
+  }
+
+  const onlyFuture = existing && document.getElementById('opt-only-future').checked;
+  const dayDates = computeDayDates(weekStart);
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const targetCells = allCells().filter(c => {
+    if (!onlyFuture) return true;
+    const existingMeal = planMeals.find(m => m.day === c.day && m.slot === c.slot);
+    if (existingMeal && (existingMeal.status === '먹음' || existingMeal.status === '외식')) return false;
+    return dayDates[c.day] >= todayStr;
+  });
+
+  await generatePlan(weekStart, targetCells);
+}
+
+/**
+ * targetCells만 Gemini로 미리 생성(저장 안 함) → 규칙 위반 칸만 한 번 더 생성 → 전부 모은 뒤에만
+ * plan.commit으로 저장한다. 생성 중 하나라도 실패하면 아무것도 저장하지 않아 기존 식단이 그대로 남는다.
+ */
+async function generatePlan(weekStart, targetCells) {
+  const statusEl = document.getElementById('plan-status');
+
+  try {
+    const generated = [];
+    const chunks = chunk(targetCells, CELL_CHUNK_SIZE);
+
+    for (let i = 0; i < chunks.length; i++) {
+      statusEl.textContent = chunks.length > 1 ? `식단 생성 중... (${i + 1}/${chunks.length})` : '식단 생성 중...';
+      const result = await callApi('plan.generate', {
+        week_start: weekStart,
+        only_cells: chunks[i]
+      }, PLAN_CALL_TIMEOUT_MS);
+      generated.push(...(result.meals || []));
+    }
+
+    // 3일 내 반복 등을 제대로 잡으려면, 그대로 둘 기존 칸까지 합쳐서 검사해야 한다.
+    const untouchedMeals = planMeals.filter(m => !targetCells.some(c => c.day === m.day && c.slot === m.slot));
+    const combined = untouchedMeals.concat(generated);
+    const violations = checkRules(combined, []).filter(v => targetCells.some(c => c.day === v.day && c.slot === v.slot));
+
+    if (violations.length) {
+      statusEl.textContent = `규칙 위반 ${violations.length}건 발견, 해당 칸만 다시 짜는 중...`;
+      const retryCells = Array.from(
+        new Map(violations.map(v => [v.day + v.slot, { day: v.day, slot: v.slot }])).values()
+      );
+      const retryResult = await callApi('plan.generate', { week_start: weekStart, only_cells: retryCells }, PLAN_CALL_TIMEOUT_MS);
+      (retryResult.meals || []).forEach(rm => {
+        const idx = generated.findIndex(g => g.day === rm.day && g.slot === rm.slot);
+        if (idx !== -1) generated[idx] = rm; else generated.push(rm);
+      });
+    }
+
+    statusEl.textContent = '저장 중...';
+    const commitResult = await callApi('plan.commit', {
+      week_start: weekStart,
+      meals: generated,
+      target_cells: targetCells
+    }, PLAN_CALL_TIMEOUT_MS);
+
+    planMeals = commitResult.meals || [];
+    planShopping = commitResult.shopping || [];
+    renderPlanGrid(weekStart);
+    renderPlanDetail();
+    renderShoppingList();
+    updateGenerateButtonLabel();
+    statusEl.textContent = describePlanStatus(planMeals);
+  } catch (err) {
+    // 저장(plan.commit) 전에 실패했으므로 planMeals·시트 모두 그대로다. 오류만 보여준다.
     statusEl.innerHTML = errorHtml(err);
   }
 }
@@ -287,13 +317,7 @@ async function loadLightOptions() {
 function renderPlanGrid(weekStart) {
   const grid = document.getElementById('plan-grid');
   const todayStr = new Date().toISOString().slice(0, 10);
-
-  const dayDate = {};
-  DAYS.forEach((day, idx) => {
-    const date = new Date(weekStart);
-    date.setDate(date.getDate() + idx);
-    dayDate[day] = date.toISOString().slice(0, 10);
-  });
+  const dayDate = computeDayDates(weekStart);
 
   let html = '<tr><th></th>' + DAYS.map(day => (
     `<th class="${dayDate[day] === todayStr ? 'today' : ''}">${day}</th>`
@@ -348,7 +372,7 @@ function renderPlanDetail() {
 
   document.getElementById('btn-regenerate-cell').addEventListener('click', () => {
     const weekStart = document.getElementById('week-start').value;
-    regenerateCell(weekStart, selectedCell);
+    generatePlan(weekStart, [selectedCell]);
   });
 }
 

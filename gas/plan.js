@@ -1,13 +1,23 @@
 /**
- * 식단 생성(plan.generate)·가벼운 한 끼(plan.lightOptions)·조회(plan.list).
+ * 식단 생성(plan.generate)·저장(plan.commit)·가벼운 한 끼(plan.lightOptions)·조회(plan.list).
  *
- * 실행 로그에서 7일(21끼)을 한 번에 요청하면 200~360초가 걸려 GAS 6분 제한에 걸리는 걸 확인했다.
- * 그래서 이 함수는 항상 only_cells로 범위를 받는다(없으면 전체 21칸으로 간주) — 기본 흐름은
- * 클라이언트가 월~목/금~일로 쪼개 두 번 호출하고, 규칙 위반 칸만 다시 요청할 때도 같은 길을 쓴다.
- * 출력을 더 줄이기 위해:
- * - uses는 item_key 문자열이 아니라 프롬프트에 함께 보낸 품목 "번호"(정수)로 받아 서버에서 item_key로 되돌린다.
- * - note·light_options·shopping은 스키마에서 뺐다. light_options는 별도 액션(plan.lightOptions)으로,
- *   shopping은 Gemini가 만들지 않고 서버가 uses+Inventory로 계산한다.
+ * plan.generate는 Gemini 결과를 "미리보기"로만 돌려주고 시트에 아무것도 쓰지 않는다.
+ * plan.commit이 실제 저장을 맡는다. 이렇게 나눈 이유: 새로 만들기를 누르고 Gemini 호출이
+ * 중간에 실패하면(503 등) 기존 식단을 전혀 건드리지 않아야 하기 때문 — 생성이 전부 끝난
+ * 뒤에야 지우고 쓴다. plan.commit은 target_cells에 해당하는 기존 행만 지우고 새로 넣으므로,
+ * '오늘 이후만 다시 짜기'처럼 일부 칸만 바꿀 때 나머지 칸은 그대로 남는다.
+ *
+ * 실행 로그에서 7일(21끼)을 한 번에 요청하면 200~360초가 걸려 GAS 6분 제한에 걸리는 걸 확인해서,
+ * plan.generate는 항상 only_cells로 범위를 받는다(없으면 전체 21칸). 클라이언트가 한 번에
+ * 최대 12칸씩 나눠 호출한다.
+ *
+ * 출력을 줄이기 위해 uses는 item_key 문자열이 아니라 프롬프트에 함께 보낸 품목 "번호"(정수)로 받아
+ * 서버에서 item_key로 되돌린다. note·light_options·shopping은 스키마에서 뺐다.
+ * light_options는 별도 액션(plan.lightOptions)으로, shopping은 Gemini가 만들지 않고
+ * 서버가 uses+Inventory로 계산한다.
+ *
+ * 같은 week_start+day+slot 행이 여러 개 쌓여 있을 수 있어(과거 버그), 읽을 때는 항상
+ * dedupeLatestByDaySlot_으로 가장 아래(나중에 쓰인) 행만 남긴다.
  */
 const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const SLOTS = ['아침', '점심', '저녁'];
@@ -67,6 +77,7 @@ const LIGHT_SCHEMA = {
   required: ['options']
 };
 
+/** 저장 없이 Gemini에 only_cells만큼 생성을 요청하고 결과만 돌려준다. */
 function actionPlanGenerate_(body) {
   const weekStart = body.week_start;
   if (!weekStart) throw new Error('week_start가 필요합니다.');
@@ -74,14 +85,13 @@ function actionPlanGenerate_(body) {
   const onlyCells = body.only_cells && body.only_cells.length
     ? body.only_cells
     : DAYS.reduce((acc, day) => acc.concat(SLOTS.map(slot => ({ day: day, slot: slot }))), []);
-  const replaceWeek = !!body.replace_week;
 
   const items = readRows('Items').filter(it => it.meal_role !== '제외');
   const inventory = readRows('Inventory');
   const settings = readSettingsMap_();
   const compact = buildCompactItemLines_(items, inventory, TOP_ITEMS_LIMIT);
 
-  const existingMeals = readRows('MealPlans').filter(m => m.week_start === weekStart);
+  const existingMeals = dedupeLatestByDaySlot_(readRows('MealPlans').filter(m => m.week_start === weekStart));
   const otherMeals = existingMeals.filter(m => !onlyCells.some(c => c.day === m.day && c.slot === m.slot));
 
   const prompt = buildPlanPrompt_({
@@ -96,31 +106,57 @@ function actionPlanGenerate_(body) {
     thinkingConfig: { thinkingBudget: 0 },
     maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS
   });
-  const meals = result.meals || [];
-  if (meals.length !== onlyCells.length) {
-    console.log('plan.generate 경고 — 요청 ' + onlyCells.length + '칸, 응답 ' + meals.length + '칸');
+  const rawMeals = result.meals || [];
+  if (rawMeals.length !== onlyCells.length) {
+    console.log('plan.generate 경고 — 요청 ' + onlyCells.length + '칸, 응답 ' + rawMeals.length + '칸');
   }
 
-  if (replaceWeek) {
-    deleteRowsByMatch('MealPlans', { week_start: weekStart });
-  }
+  const meals = rawMeals.map(m => ({
+    day: m.day,
+    slot: m.slot,
+    menu: m.menu,
+    uses: resolveUsesKeys_(m.uses, compact.keys),
+    difficulty: m.difficulty
+  }));
+
+  return { meals: meals };
+}
+
+/**
+ * 미리 생성된 meals를 실제로 저장한다. target_cells(없으면 meals의 day+slot)에 해당하는
+ * 기존 행만 지우고 새로 넣는다 — 나머지 칸(예: 오늘 이전, 먹음/외식)은 그대로 남는다.
+ */
+function actionPlanCommit_(body) {
+  const weekStart = body.week_start;
+  if (!weekStart) throw new Error('week_start가 필요합니다.');
+
+  const meals = body.meals || [];
+  const targetCells = body.target_cells && body.target_cells.length
+    ? body.target_cells
+    : meals.map(m => ({ day: m.day, slot: m.slot }));
+
+  targetCells.forEach(c => {
+    deleteRowsByMatch('MealPlans', { week_start: weekStart, day: c.day, slot: c.slot });
+  });
 
   meals.forEach(m => {
-    upsertByMatch('MealPlans', { week_start: weekStart, day: m.day, slot: m.slot }, {
+    appendRow('MealPlans', {
       week_start: weekStart,
       day: m.day,
       slot: m.slot,
       menu: m.menu,
-      uses: resolveUsesKeys_(m.uses, compact.keys).join(','),
+      uses: Array.isArray(m.uses) ? m.uses.join(',') : (m.uses || ''),
       difficulty: m.difficulty,
-      kind: '기본',
-      status: '예정',
-      rating: ''
+      kind: m.kind || '기본',
+      status: m.status || '예정',
+      rating: m.rating || ''
     });
   });
 
-  const savedMeals = readRows('MealPlans').filter(m => m.week_start === weekStart);
-  const shopping = computeShoppingList_(savedMeals, readRows('Items'), inventory);
+  const items = readRows('Items');
+  const inventory = readRows('Inventory');
+  const savedMeals = dedupeLatestByDaySlot_(readRows('MealPlans').filter(m => m.week_start === weekStart));
+  const shopping = computeShoppingList_(savedMeals, items, inventory);
 
   return { meals: savedMeals.map(formatMealRow_), shopping: shopping };
 }
@@ -158,10 +194,17 @@ function actionPlanList_(body) {
 
   const items = readRows('Items');
   const inventory = readRows('Inventory');
-  const meals = readRows('MealPlans').filter(m => m.week_start === weekStart);
+  const meals = dedupeLatestByDaySlot_(readRows('MealPlans').filter(m => m.week_start === weekStart));
   const shopping = computeShoppingList_(meals, items, inventory);
 
   return { meals: meals.map(formatMealRow_), shopping: shopping };
+}
+
+/** 같은 day+slot이 여러 행이면 가장 아래(나중) 행만 남긴다. */
+function dedupeLatestByDaySlot_(meals) {
+  const map = new Map();
+  meals.forEach(m => { map.set(m.day + '|' + m.slot, m); });
+  return Array.from(map.values());
 }
 
 function resolveUsesKeys_(uses, keys) {
