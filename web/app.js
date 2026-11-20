@@ -234,6 +234,11 @@ async function onGenerateClick(weekStart) {
     return dayDates[c.day] >= todayStr;
   });
 
+  if (targetCells.length === 0) {
+    alert('이 주는 "오늘 이후" 칸이 없어서 다시 짤 게 없습니다. 체크를 해제하거나 다른 주를 선택해 주세요.');
+    return;
+  }
+
   await generatePlan(weekStart, targetCells);
 }
 

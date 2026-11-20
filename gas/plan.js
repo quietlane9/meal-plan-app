@@ -171,7 +171,7 @@ function actionPlanLightOptions_() {
 
   const prompt = [
     '재고와 자주 사는 품목으로 다이어트용 가벼운 한 끼 후보 3개를 제안하라.',
-    '[품목] (번호:이름(분류/보관)구매N회[/재고상태])',
+    '[품목] (번호:이름(분류/역할)구매N회[/재고상태]. 역할=메인/반찬/아침/간식/음료)',
     compact.lines.join('\n') || '(데이터 없음)',
     'uses는 위 [품목] 번호만 정수 배열로 넣어라. 메뉴명은 짧게 써라(10자 이내 권장).',
     '각 후보에 난도(쉬움/보통/손 많이 감)를 붙여라.'
@@ -253,8 +253,10 @@ function computeShoppingList_(meals, items, inventory) {
 }
 
 /**
- * Items를 "번호:이름(분류/보관)구매N회[/재고상태]" 한 줄씩으로 압축한다.
+ * Items를 "번호:이름(분류/역할)구매N회[/재고상태]" 한 줄씩으로 압축한다.
  * 번호는 반환하는 keys 배열의 인덱스와 같고, Gemini가 uses에 이 번호를 넣으면 keys[번호]로 item_key를 되돌린다.
+ * 역할(meal_role: 메인/반찬/아침/간식/음료)을 넣는 이유: 이게 없으니 모델이 간식(과자)을
+ * 반찬으로 쓰는 등 역할을 헷갈려 했다. 보관(storage)보다 역할이 조합 품질에 더 중요해서 바꿨다.
  */
 function buildCompactItemLines_(items, inventory, limit) {
   const invStatus = {};
@@ -269,7 +271,7 @@ function buildCompactItemLines_(items, inventory, limit) {
   const lines = top.map((it, idx) => {
     const status = invStatus[it.item_key];
     const stockTag = status ? '/재고' + status : '';
-    return idx + ':' + it.name + '(' + it.category + '/' + it.storage + ')구매' + (it.purchase_count || 0) + '회' + stockTag;
+    return idx + ':' + it.name + '(' + it.category + '/' + (it.meal_role || '기타') + ')구매' + (it.purchase_count || 0) + '회' + stockTag;
   });
 
   return { lines: lines, keys: keys };
@@ -282,19 +284,20 @@ function buildPlanPrompt_(ctx) {
     ctx.weekStart + '부터 시작하는 주의 식단을 짜라.',
     '아래 칸만 짜서 meals에 그 칸들만 넣어라. 나머지 칸은 넣지 마라.',
     ctx.onlyCells.map(c => '- ' + c.day + ' ' + c.slot).join('\n'),
-    '[품목] (번호:이름(분류/보관)구매N회[/재고상태])',
+    '[품목] (번호:이름(분류/역할)구매N회[/재고상태]. 역할=메인/반찬/아침/간식/음료)',
     ctx.itemLines.join('\n') || '(데이터 없음)',
     '[설정] 식구 수 ' + (settings.headcount || '4') + ', 끼니별 인원 ' + (settings.slot_headcount || ''),
     '[제외 음식] ' + (settings.exclude_foods || '없음'),
     '[규칙] ' + (settings.rules || ''),
     '재고 있음·조금 품목을 먼저 쓰되(없음은 빼고, 조금은 곁들임으로만), 재고 표시가 없으면 구매횟수 기준으로 골라라.',
-    '한 끼니는 보통 메인 요리 1개 + 반찬 0~2개를 같이 먹는 조합이다.',
-    'menu에는 메인 요리(또는 단품이면 그 자체)만 넣고, 같이 먹는 반찬이 있으면 sides에 0~2개 짧게 넣어라.',
-    '아침·간식처럼 원래 단품으로 먹는 끼니는 sides를 빈 배열로 둬라.',
+    '한 끼니는 보통 메인 요리 1개 + 반찬 1~2개를 같이 먹는 조합이다. 단품(아침·간식 등 원래 하나만 먹는 끼니)만 예외다.',
+    'menu는 역할이 메인·아침인 품목(또는 그 조합 요리) 위주로 정하고, sides는 역할이 반찬인 품목으로만 골라라.',
+    '간식·음료 역할 품목은 sides에 넣지 마라(과자·음료는 반찬이 아니다).',
+    '점심·저녁은 특별한 사정이 없으면 sides를 빈 배열로 두지 말고 1~2개 채워라.',
     '같은 메인 메뉴는 3일 안에 반복하지 마라. 찌개류는 하루 한 번까지.',
-    '아침은 주로 간단한 한식(밥+국·찌개류)이나 유부초밥 같은 핑거푸드로 가볍게 짜고, 빵(토스트·샌드위치 등) 위주 식단은 일주일에 1~2번만 넣어라.',
+    '아침은 요거트·우유·시리얼만 반복하지 말고, 대부분은 밥+국(또는 찌개) 조합이나 유부초밥 같은 한 손에 먹는 핑거푸드로 짜라. 빵(토스트·샌드위치 등) 위주 식단은 일주일에 1~2번만 넣어라.',
     'menu·sides 모두 짧게 써라(각 10자 이내 권장).',
-    'uses에는 menu와 sides에 쓰인 재료를 모두 포함해 위 [품목] 번호로 넣어라. 재료가 필요 없으면 빈 배열.',
+    'uses에는 menu와 sides에 쓰인 재료를 모두 포함해 위 [품목] 번호로 넣어라. 해당 재료가 [품목] 목록에 없으면 비워 둬도 된다.',
     '각 끼니에 난도(쉬움/보통/손 많이 감)를 붙여라.'
   ];
 
